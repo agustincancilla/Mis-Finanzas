@@ -1,6 +1,6 @@
 # Mis Finanzas
 
-App de finanzas personales de Agus: https://agustincancilla.github.io/mis-finanzas/
+App de finanzas personales de Agus: https://agustincancilla.github.io/Mis-Finanzas/
 
 - Pestañas (en este orden, lo pidió Agus): Mes, Tarjetas, Inversiones, Comida, Auto, Deudas.
 - **Línea rápida** arriba (se puede dictar con el micrófono del teclado): separa por coma o punto y entiende gastos ("súper 25000 visa", "nafta 30 lucas", "tele 300000 en 6 cuotas mp", "ayer…"), cambios de precio ("subió el gym a 50000", "el kilo de pollo está a 9500") y ganancias ("hoy hice 95 mil"). Siempre muestra una hoja para confirmar antes de guardar.
