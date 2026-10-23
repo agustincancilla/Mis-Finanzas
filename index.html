@@ -625,7 +625,7 @@ details[open] summary { margin-bottom: 4px; }
       for (const g of store.gastos) {
         if (g.medio !== t.id) continue;
         const n = Math.max(1, Number(g.cuotas) || 1);
-        const idx = list.findIndex((c) => c.cierre >= g.fecha);
+        const idx = list.findIndex((c) => c.cierre >= (g.enResumen || g.fecha));
         if (idx < 0) continue;
         for (let k = 0; k < n && list[idx + k]; k++) list[idx + k].items.push({ g, cuota: (g.cuotaDesde || 1) + k, n: g.cuotasTotal || n, monto: g.monto / n });
       }
@@ -1737,20 +1737,40 @@ details[open] summary { margin-bottom: 4px; }
       try { await navigator.clipboard.writeText(exportText()); markBackup(); toast("Copia copiada: pegala en WhatsApp o en una nota"); }
       catch (_) { const t = sheet.querySelector("#import-text"); t.value = exportText(); t.select(); toast("Texto seleccionado: copialo"); }
     });
+    const btn = sheet.querySelector("#do-import");
+    const esMovs = (raw) => { try { return JSON.parse(raw).tipo === "movimientos"; } catch (_) { return false; } };
     sheet.querySelector("#import-file").addEventListener("change", async (e) => {
       const f = e.target.files && e.target.files[0]; if (!f) return;
-      sheet.querySelector("#import-text").value = await f.text();
-      toast("Archivo leído. Tocá “Cargar y reemplazar”.");
+      const raw = await f.text();
+      sheet.querySelector("#import-text").value = raw;
+      if (esMovs(raw)) { btn.classList.remove("btn-danger"); btn.classList.add("btn-primary"); btn.textContent = "Sumar movimientos"; toast("Archivo de movimientos. Tocá “Sumar movimientos”."); }
+      else toast("Archivo leído. Tocá “Cargar y reemplazar”.");
     });
-    const btn = sheet.querySelector("#do-import");
     btn.addEventListener("click", () => {
       const raw = sheet.querySelector("#import-text").value.trim();
       if (!raw) { toast("Pegá el texto o elegí un archivo primero."); return; }
+      if (esMovs(raw)) { if (sumarMovimientos(JSON.parse(raw))) closeSheet(); return; }
       let data;
       try { data = normalize(JSON.parse(raw)); } catch (_) { toast("Ese texto no es una copia de Mis Finanzas. Copialo de nuevo, completo."); return; }
       if (hasData() && !btn.classList.contains("armed")) { btn.classList.add("armed"); btn.textContent = "¿Seguro? Se reemplaza todo"; return; }
       if (save(() => { store = data; }, `Datos cargados: ${data.fijos.length} fijos, ${data.gastos.length} gastos`)) closeSheet();
     });
+  }
+  /* Archivo de movimientos (por ejemplo, sacado de las capturas de la tarjeta): se SUMA a lo que hay, sin reemplazar nada.
+     { tipo: "movimientos", gastos: [{ ref, fecha, desc, monto, cat, medio, cuotas?, previo?, fijo? }], resumenes?: { clave: { ... } } }
+     `ref` evita cargar dos veces el mismo; `enResumen` (fecha de cierre) lo pone en ese resumen aunque la compra sea del día del cierre anterior; `fijo` es una palabra del nombre del gasto fijo que paga (lo marca como pagado ese mes). */
+  function sumarMovimientos(m) {
+    const gastos = Array.isArray(m.gastos) ? m.gastos.filter((g) => g && g.fecha && g.monto > 0) : [];
+    const nuevos = gastos.filter((g) => !g.ref || !store.gastos.some((x) => x.ref === g.ref));
+    if (!nuevos.length) { toast("Esos movimientos ya estaban cargados."); return false; }
+    return save(() => {
+      for (const g of nuevos) {
+        const { fijo, ...resto } = g;
+        const f = fijo ? store.fijos.find((x) => x.tipo === "pago" && new RegExp(fijo, "i").test(x.nombre || "")) : null;
+        store.gastos.push({ id: newId(), cuotas: 1, cat: "Otros", medio: "efectivo", ...resto, ...(f ? { fijoId: f.id } : {}) });
+      }
+      for (const [k, v] of Object.entries(m.resumenes || {})) store.resumenes[k] = { ...(store.resumenes[k] || {}), ...(v || {}) };
+    }, `Se sumaron ${nuevos.length} movimientos${gastos.length > nuevos.length ? ` (${gastos.length - nuevos.length} ya estaban)` : ""}`);
   }
   $("#open-data").addEventListener("click", openDataSheet);
 
