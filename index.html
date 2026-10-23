@@ -388,6 +388,15 @@ details[open] summary { margin-bottom: 4px; }
     { nombre: "PedidosYa", palabras: "pedidosya, pedidos ya, pedido ya", medio: "visa" },
     { nombre: "Mercado Libre", palabras: "mercado libre, meli", medio: "mp" },
   ];
+  /* Plan de mantenimiento sugerido para un VW Voyage 1.6 con GNC (precios estimados de oct/2026, con mano de obra). */
+  const MANT_INICIAL = [
+    ["Aceite + filtro", 90000, 7000], ["Alineación y balanceo", 60000, 10000], ["Amortiguadores delanteros", 270000, 80000],
+    ["Amortiguadores traseros", 170000, 80000], ["Bobina", 105000, 65000], ["Bujías", 45000, 20000], ["Cables de bujías", 55000, 40000],
+    ["Correa, tensor y bomba de agua", 420000, 60000], ["Cubiertas delanteras", 270000, 80000], ["Cubiertas traseras", 270000, 80000],
+    ["Embrague", 410000, 100000], ["Filtro de aire", 12000, 15000], ["Filtro de nafta", 25000, 50000], ["Refrigerante", 70000, 40000],
+    ["Termostato", 85000, 80000], ["Pastillas de freno", 85000, 30000], ["Discos de freno", 130000, 60000], ["Cintas de freno", 80000, 60000],
+    ["Batería", 230000, null, 36], ["Oblea de GNC", 35000, null, 12], ["Prueba hidráulica del tubo de GNC", 100000, null, 60],
+  ].map(([nombre, costo, cadaKm, cadaMeses]) => ({ nombre, costo, ...(cadaKm ? { cadaKm } : {}), ...(cadaMeses ? { cadaMeses } : {}), precio: "estimado" }));
   const TARJETAS_INICIALES = [
     { id: "visa", nombre: "Visa Macro", tipo: "variable", cierres: [] },
     { id: "mp", nombre: "Mercado Pago", tipo: "fija", diaCierre: 5, diaVence: 10 },
@@ -429,7 +438,8 @@ details[open] summary { margin-bottom: 4px; }
   /* ---------- Datos guardados en el celu ---------- */
   function emptyStore() {
     return {
-      ingreso: { frecuencia: "semanal", monto: 0, dia: 6 }, medioDefault: "efectivo", reglas: REGLAS_INICIALES.map((r) => ({ ...r, id: newId() })), fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [],
+      ingreso: { frecuencia: "semanal", monto: 0, dia: 6 }, medioDefault: "efectivo", reglas: REGLAS_INICIALES.map((r) => ({ ...r, id: newId() })),
+      mant: MANT_INICIAL.map((r) => ({ ...r, id: newId() })), mantConf: { kmPorMes: 4000, colchon: 10 }, fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [],
       tarjetas: JSON.parse(JSON.stringify(TARJETAS_INICIALES)), resumenes: {}, dolar: null,
       billeteras: [{ id: "nx", nombre: "Naranja X", saldo: null, tna: null, actualizado: null }, { id: "mpw", nombre: "Mercado Pago", saldo: null, tna: null, actualizado: null }],
     };
@@ -459,6 +469,8 @@ details[open] summary { margin-bottom: 4px; }
     const autoCat = (t) => { t = sinAcento(t); return /seguro/.test(t) ? "Seguro del auto" : /gnc|nafta|carga|ypf/.test(t) ? "GNC" : /peaje|autopista|estacionamiento/.test(t) ? "Peajes" : /repuesto|service|mecanic|aceite|gomeria|cubierta|filtro|taller/.test(t) ? "Mantenimiento del auto" : "Otros del auto"; };
     out.fijos.forEach((f) => { if (f.cat === "Auto") f.cat = autoCat(f.nombre); });
     out.gastos.forEach((g) => { if (g.cat === "Auto") g.cat = autoCat(g.desc); });
+    if (Array.isArray(d.mant)) out.mant = d.mant.filter((r) => r && typeof r === "object").map((r) => ({ ...r, id: String(r.id || newId()) }));
+    if (d.mantConf && typeof d.mantConf === "object") out.mantConf = { kmPorMes: Number(d.mantConf.kmPorMes) || 4000, colchon: Number(d.mantConf.colchon) || 0 };
     if (Array.isArray(d.reglas)) out.reglas = d.reglas.filter((r) => r && typeof r === "object").map((r) => ({ ...r, id: String(r.id || newId()) }));
     if (out.seedVersion < 7) {
       /* Lo que no se aclara va a efectivo/débito; Claude se paga con el débito de Naranja X. */
@@ -708,7 +720,9 @@ details[open] summary { margin-bottom: 4px; }
   function netoTrabajo(m) {
     const det = ingresosDetalle(m);
     const gs = gastosMes(m).filter((g) => AUTO_CATS.includes(g.cat));
-    const real = gs.reduce((t, g) => t + g.monto, 0);
+    const mantGastado = gs.filter((g) => g.cat === "Mantenimiento del auto").reduce((t, g) => t + g.monto, 0);
+    const real = gs.reduce((t, g) => t + g.monto, 0) - mantGastado;
+    const reserva = planMant().total;
     let falta = 0;
     const tope = store.fijos.find((f) => f.tipo === "tope" && f.cat === "GNC");
     const gnc = gs.filter((g) => g.cat === "GNC").reduce((t, g) => t + g.monto, 0);
@@ -720,9 +734,9 @@ details[open] summary { margin-bottom: 4px; }
     const dias = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
     return {
       cobras: det.total, estimado: det.est > 0, auto: real + falta,
-      autoDetalle: falta ? `${money(real)} gastado + ${money(falta)} que falta (GNC hasta el tope, seguro)` : "GNC, peajes, seguro y mantenimiento",
-      mono: monoMonto, monoPagado: !!monoPago,
-      neto: det.total - real - falta - monoMonto, semanas: dias / 7,
+      autoDetalle: falta ? `${money(real)} gastado + ${money(falta)} que falta (GNC hasta el tope, seguro)` : "GNC, peajes y seguro",
+      mant: reserva, mono: monoMonto, monoPagado: !!monoPago,
+      neto: det.total - real - falta - reserva - monoMonto, semanas: dias / 7,
     };
   }
   function renderGanancias() {
@@ -751,6 +765,7 @@ details[open] summary { margin-bottom: 4px; }
         <div class="rows">
           <div class="row no-check"><span><span class="name">Cobrás</span><br><span class="meta">${n.estimado ? "Lo anotado más el mínimo de los días que faltan" : "Lo que anotaste"}</span></span><span class="amt">${money(n.cobras)}</span></div>
           <div class="row no-check"><span><span class="name">− Auto</span><br><span class="meta">${esc(n.autoDetalle)}</span></span><span class="amt">${money(n.auto)}</span></div>
+          <div class="row no-check"><span><span class="name">− Mantenimiento</span><br><span class="meta">Lo que separás por mes (plan en la pestaña Auto)</span></span><span class="amt">${money(n.mant)}</span></div>
           <div class="row no-check"><span><span class="name">− Monotributo</span><br><span class="meta">${n.monoPagado ? "Pagado" : "Todavía no lo tildaste"}</span></span><span class="amt">${money(n.mono)}</span></div>
         </div>
         <div class="small muted">Es lo que te deja Didi antes del alquiler, la comida y lo demás. Unos ${money(n.neto / n.semanas)} por semana.</div>
@@ -1139,6 +1154,33 @@ details[open] summary { margin-bottom: 4px; }
     for (let d = m + "-01"; d <= hasta; d = addDays(d, 1)) if (ing.dias.includes(parseIso(d).getDay())) n++;
     return n;
   }
+  /* Cuánto separar por mes: costo / meses que dura (por km según los km por mes, o por tiempo). */
+  function planMant() {
+    const km = store.mantConf.kmPorMes || 4000;
+    const items = store.mant.map((x) => ({ x, mes: x.cadaKm ? (x.costo || 0) / (x.cadaKm / km) : x.cadaMeses ? (x.costo || 0) / x.cadaMeses : 0 }))
+      .sort((a, b) => b.mes - a.mes);
+    const base = items.reduce((t, i) => t + i.mes, 0);
+    return { items, base, total: base * (1 + (store.mantConf.colchon || 0) / 100) };
+  }
+  function openPlanConf() {
+    const c = store.mantConf;
+    const form = mountSheet(`
+      <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="pc-title">
+        <h2 id="pc-title">Plan de mantenimiento</h2>
+        <div class="fields-2">
+          <div class="field"><label for="pc-km">Km por mes</label><input id="pc-km" type="text" inputmode="numeric" data-num value="${fmtN(c.kmPorMes)}"></div>
+          <div class="field"><label for="pc-col">Extra para imprevistos (%)</label><input id="pc-col" type="text" inputmode="numeric" value="${c.colchon}"></div>
+        </div>
+        <span class="hint">Con más km por mes, los repuestos duran menos meses y hay que separar más.</span>
+        <div class="sheet-actions"><span></span><div><button class="btn" type="button" data-cancel>Cancelar</button><button class="btn btn-primary" type="submit">Guardar</button></div></div>
+      </form>`);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const km = parseInt0(form.querySelector("#pc-km").value) || 4000;
+      const col = Math.min(100, parseInt0(form.querySelector("#pc-col").value) || 0);
+      if (save(() => { store.mantConf = { kmPorMes: km, colchon: col }; }, `Separá ${money(planMant().total)} por mes`)) closeSheet();
+    });
+  }
   function renderAuto() {
     const box = $("#auto");
     const sum = (l) => l.reduce((t, g) => t + g.monto, 0);
@@ -1176,6 +1218,23 @@ details[open] summary { margin-bottom: 4px; }
           ${ing && gncTot ? `<span>Se lleva el <b>${fmtN(gncTot / ing * 100, 1)}%</b> de lo que cobrás</span>` : ""}
         </div></div>`;
     }
+    const pm = planMant();
+    const est = store.mant.filter((x) => x.precio !== "confirmado").length;
+    html += `<div class="panel" style="gap:8px">
+      <h3 class="group-title">Plan de mantenimiento</h3>
+      <div class="card plata">
+        <div class="tiny muted" style="letter-spacing:.1em;text-transform:uppercase">Separá por mes</div>
+        <div class="big">${money(pm.total)}</div>
+        <div class="tiny muted">${money(pm.base)} de repuestos${store.mantConf.colchon ? ` + ${fmtN(store.mantConf.colchon)}% para imprevistos` : ""} · con ${fmtN(store.mantConf.kmPorMes)} km por mes</div>
+        ${est ? `<div class="small muted">${est} ${est === 1 ? "precio es estimado" : "precios son estimados"}: tocá cada uno para poner el real.</div>` : ""}
+        <div class="actions"><button class="btn btn-sm" type="button" data-plan-conf>Km por mes e imprevistos</button>
+          <button class="btn btn-sm" type="button" data-add="mant">+ Repuesto</button></div>
+      </div>
+      <div class="rows">${pm.items.map(({ x, mes }) => `
+        <div class="row no-check"><button class="row-btn" type="button" data-edit="mant" data-id="${esc(x.id)}">
+          <span><span class="name">${esc(x.nombre)}</span><br><span class="meta">${x.cadaKm ? `Cada ${fmtN(x.cadaKm)} km` : x.cadaMeses ? `Cada ${fmtN(x.cadaMeses)} meses` : "Sin frecuencia"} · ${money(x.costo)}${x.precio !== "confirmado" ? " · estimado" : ""}</span></span>
+          <span class="amt">${money(mes)}<span class="tiny muted">/mes</span></span></button></div>`).join("")}</div>
+    </div>`;
     const meses = [0, 1, 2, 3, 4, 5].map((k) => shiftMonth(mk(today()), -k));
     html += `<div class="panel" style="gap:8px"><h3 class="group-title">Últimos meses</h3><div class="rows">${meses.map((m) => {
       const l = gastosMes(m).filter((g) => AUTO_CATS.includes(g.cat));
@@ -1197,6 +1256,7 @@ details[open] summary { margin-bottom: 4px; }
     box.innerHTML = html;
   }
   $("#auto").addEventListener("click", (e) => {
+    if (e.target.closest("[data-plan-conf]")) { openPlanConf(); return; }
     const b = e.target.closest("[data-auto-mes]"); if (!b) return;
     curMonth = shiftMonth(curMonth, Number(b.dataset.autoMes)); renderMes(); renderAuto();
   });
@@ -1450,6 +1510,13 @@ details[open] summary { margin-bottom: 4px; }
 
   /* ---------- Hojas: agregar / editar / borrar ---------- */
   const SCHEMAS = {
+    mant: { title: "repuesto", fields: [
+      { k: "nombre", l: "Repuesto o service", t: "text", req: true },
+      { k: "costo", l: "Cuánto sale (con mano de obra)", t: "money", req: true },
+      { k: "cadaKm", l: "Cada cuántos km", t: "money", hint: "Dejalo vacío si va por tiempo (ej. batería)." },
+      { k: "cadaMeses", l: "O cada cuántos meses", t: "money" },
+      { k: "precio", l: "Precio", t: "select", opts: [["estimado", "Estimado"], ["confirmado", "Confirmado (lo pagué o me lo pasaron)"]] },
+    ]},
     reglas: { title: "regla", fields: [
       { k: "nombre", l: "Nombre", t: "text", req: true, hint: "Ej: GNC y nafta" },
       { k: "palabras", l: "Palabras que lo nombran", t: "text", req: true, hint: "Separadas por coma. Ej: gnc, nafta, carga" },
@@ -1500,7 +1567,7 @@ details[open] summary { margin-bottom: 4px; }
       { k: "nota", l: "Nota", t: "area" },
     ]},
   };
-  const DEFAULTS = { reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }) };
+  const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }) };
 
   function closeSheet() { $("#sheet-root").innerHTML = ""; }
   function mountSheet(html) {
