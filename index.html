@@ -363,7 +363,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v11"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v12"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -671,15 +671,27 @@ details[open] summary { margin-bottom: 4px; }
     renderGanancias();
 
     const pagos = store.fijos.filter((f) => f.tipo === "pago");
-    const topes = store.fijos.filter((f) => f.tipo === "tope");
+    const topes = store.fijos.filter((f) => f.tipo === "tope").sort((a, b) => (b.monto || 0) - (a.monto || 0));
     const pagado = pagos.reduce((s, f) => { const p = fijoPago(f, curMonth); return s + (p ? p.monto : 0); }, 0);
     const previsto = pagos.reduce((s, f) => s + (f.monto || 0), 0);
     let html = "";
     if (!store.fijos.length) html = `<div class="empty">Todavía no hay gastos fijos. Tocá “+ Fijo” para cargar el alquiler, la luz, el gym…</div>`;
-    if (pagos.length) {
-      html += `<div class="small muted">Tildá cada uno cuando lo pagues. Pagaste <b class="num">${money(pagado)}</b> de <b class="num">${money(previsto)}</b>.</div>
-      <div class="rows">${pagos.map((f) => {
-        const p = fijoPago(f, curMonth);
+    // Las tarjetas van en la lista con el resumen que hay que pagar: se arma solo con los gastos anotados.
+    const tarjetasFijas = buildCards().map(({ t, list }) => ({ t, c: resumenAPagar(list, curMonth) }));
+    const filas = [
+      ...pagos.map((f) => { const p = fijoPago(f, curMonth); return { f, p, monto: p ? p.monto : f.monto || 0 }; }),
+      ...tarjetasFijas.map((x) => ({ ...x, monto: x.c ? x.c.total : 0 })),
+    ].sort((a, b) => b.monto - a.monto);
+    if (filas.length) {
+      html += `<div class="small muted">Tildá cada uno cuando lo pagues. Pagaste <b class="num">${money(pagado)}</b> de <b class="num">${money(previsto)}</b> (sin las tarjetas: sus gastos ya están contados uno por uno).</div>
+      <div class="rows">${filas.map(({ f, p, t, c }) => {
+        if (t) return `<div class="row ${c && c.pagado ? "paid" : ""}">
+          <input type="checkbox" aria-label="Pagado: resumen ${esc(t.nombre)}" data-pay-resumen="${esc(c ? c.key : "")}" ${c && c.pagado ? "checked" : ""} ${c ? "" : "disabled"}>
+          <button class="row-btn" type="button" data-ir-tarjetas>
+            <span><span class="name">Tarjeta ${esc(t.nombre)}</span><br><span class="meta">${c ? `Resumen que vence el ${fmtD(c.vence)}${c.est ? " (estimado)" : ""}${c.cerrado ? "" : " · abierto, puede subir"}${c.pagado ? ` · pagado el ${fmtD(c.pagado)}` : ""}` : "No hay resumen para pagar este mes"}</span></span>
+            <span class="amt">${money(c ? c.total : 0)}</span>
+          </button>
+        </div>`;
         return `<div class="row ${p ? "paid" : ""}">
           <input type="checkbox" aria-label="Pagado: ${esc(f.nombre)}" data-pay="${esc(f.id)}" ${p ? "checked" : ""}>
           <button class="row-btn" type="button" data-edit="fijos" data-id="${esc(f.id)}">
@@ -813,7 +825,10 @@ details[open] summary { margin-bottom: 4px; }
   }
   $("#mes-prev").addEventListener("click", () => { curMonth = shiftMonth(curMonth, -1); renderMes(); renderAuto(); });
   $("#mes-next").addEventListener("click", () => { curMonth = shiftMonth(curMonth, 1); renderMes(); renderAuto(); });
+  $("#list-fijos").addEventListener("click", (e) => { if (e.target.closest("[data-ir-tarjetas]")) { showTab("tarjetas"); window.scrollTo(0, 0); } });
   $("#list-fijos").addEventListener("change", (e) => {
+    const rc = e.target.closest("[data-pay-resumen]");
+    if (rc) { cambiarPagoResumen(rc.dataset.payResumen, rc.checked); return; }
     const cb = e.target.closest("[data-pay]"); if (!cb) return;
     const f = store.fijos.find((x) => x.id === cb.dataset.pay); if (!f) return;
     const p = fijoPago(f, curMonth);
@@ -824,6 +839,52 @@ details[open] summary { margin-bottom: 4px; }
         `${f.nombre} pagado${f.medio !== "efectivo" ? " con " + MEDIOS[f.medio] : ""}`);
     }
   });
+  /* El resumen de una tarjeta que toca pagar en el mes. En el mes actual: el próximo sin pagar que vence hasta fin del mes que viene
+     (o, si ya está pagado, ese mismo, para poder destildarlo). En otro mes: el que vence en ese mes. */
+  function resumenAPagar(list, m) {
+    const con = list.filter((c) => c.total > 0);
+    if (m === mk(today())) {
+      const hasta = addDays(shiftMonth(m, 2) + "-01", -1);
+      const ventana = con.filter((c) => c.vence >= m + "-01" && c.vence <= hasta).sort((a, b) => a.vence.localeCompare(b.vence));
+      return ventana.find((c) => !c.pagado) || ventana.filter((c) => c.pagado).pop() || null;
+    }
+    return con.filter((c) => mk(c.vence) === m).sort((a, b) => a.vence.localeCompare(b.vence))[0] || null;
+  }
+  function cambiarPagoResumen(key, pagar) {
+    const c = findResumen(key); if (!c) return;
+    const t = store.tarjetas.find((x) => key.startsWith(x.id + "|"));
+    if (!pagar) {
+      const r = store.resumenes[key] || {};
+      const b = store.billeteras.find((x) => x.id === r.pagadoDe);
+      save(() => {
+        if (b && b.saldo != null && r.pagadoMonto) Object.assign(b, { saldo: b.saldo + r.pagadoMonto, actualizado: today() });
+        const { pagado, pagadoMonto, pagadoDe, ...resto } = r;
+        store.resumenes[key] = resto;
+      }, b ? `Resumen sin pagar. Volvió ${money(r.pagadoMonto || 0)} a ${b.nombre}` : "Resumen sin pagar");
+      return;
+    }
+    const form = mountSheet(`
+      <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="pr-title">
+        <h2 id="pr-title">Pagaste ${esc(t ? t.nombre : "la tarjeta")}</h2>
+        <p class="small muted">Resumen que vence el ${fmtDL(c.vence)}.</p>
+        <div class="fields-2">
+          <div class="field"><label for="pr-monto">¿Cuánto pagaste?</label><input id="pr-monto" type="text" inputmode="numeric" data-num value="${fmtN(Math.round(c.total))}"></div>
+          <div class="field"><label for="pr-bil">De dónde</label><select id="pr-bil">${store.billeteras.map((b) => `<option value="${esc(b.id)}">${esc(b.nombre)}</option>`).join("")}<option value="">Otra cuenta</option></select></div>
+        </div>
+        <div class="sheet-actions"><span></span><div><button class="btn" type="button" data-cancel>Cancelar</button><button class="btn btn-primary" type="submit">Listo</button></div></div>
+      </form>`);
+    form.closest(".sheet-back").addEventListener("click", (e) => { if (e.target.closest("[data-cancel]") || e.target.classList.contains("sheet-back")) renderMes(); });
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const n = parseInt0(form.querySelector("#pr-monto").value) || 0;
+      const b = store.billeteras.find((x) => x.id === form.querySelector("#pr-bil").value);
+      const desc = b && b.saldo != null;
+      if (save(() => {
+        store.resumenes[key] = { ...(store.resumenes[key] || {}), pagado: today(), pagadoMonto: n, pagadoDe: desc ? b.id : null };
+        if (desc) Object.assign(b, { saldo: b.saldo - n, actualizado: today() });
+      }, desc ? `Resumen pagado. Descontado de ${b.nombre}: ${money(n)}` : "Resumen pagado")) closeSheet();
+    });
+  }
   $("#edit-sueldo").addEventListener("click", () => openIngreso({ ...store.ingreso }));
   function openIngreso(v) {
     const FREC = [["diario", "Por día (viajes, changas)"], ["semanal", "Una vez por semana"], ["mensual", "Una vez por mes"]];
@@ -1037,7 +1098,7 @@ details[open] summary { margin-bottom: 4px; }
       const desc = b && b.saldo != null;
       openForms.delete("pay-" + k);
       save(() => {
-        store.resumenes[k] = { ...(store.resumenes[k] || {}), pagado: today(), pagadoMonto: n };
+        store.resumenes[k] = { ...(store.resumenes[k] || {}), pagado: today(), pagadoMonto: n, pagadoDe: desc ? b.id : null };
         if (desc) Object.assign(b, { saldo: b.saldo - n, actualizado: today() });
       }, desc ? `Resumen pagado. Descontado de ${b.nombre}: ${money(n)}` : "Resumen pagado");
     }
