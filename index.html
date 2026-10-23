@@ -388,15 +388,21 @@ details[open] summary { margin-bottom: 4px; }
     { nombre: "PedidosYa", palabras: "pedidosya, pedidos ya, pedido ya", medio: "visa" },
     { nombre: "Mercado Libre", palabras: "mercado libre, meli", medio: "mp" },
   ];
-  /* Plan de mantenimiento sugerido para un VW Voyage 1.6 con GNC (precios estimados de oct/2026, con mano de obra). */
+  /* Plan de mantenimiento de un VW Voyage 1.6 con GNC (oct/2026). Lo que Agus cambia él mismo va sin mano de obra.
+     [nombre, costo, cada km, cada meses, "c" si el precio está confirmado] */
   const MANT_INICIAL = [
-    ["Aceite + filtro", 90000, 7000], ["Alineación y balanceo", 60000, 10000], ["Amortiguadores delanteros", 270000, 80000],
-    ["Amortiguadores traseros", 170000, 80000], ["Bobina", 105000, 65000], ["Bujías", 45000, 20000], ["Cables de bujías", 55000, 40000],
-    ["Correa, tensor y bomba de agua", 420000, 60000], ["Cubiertas delanteras", 270000, 80000], ["Cubiertas traseras", 270000, 80000],
-    ["Embrague", 410000, 100000], ["Filtro de aire", 12000, 15000], ["Filtro de nafta", 25000, 50000], ["Refrigerante", 70000, 40000],
-    ["Termostato", 85000, 80000], ["Pastillas de freno", 85000, 30000], ["Discos de freno", 130000, 60000], ["Cintas de freno", 80000, 60000],
-    ["Batería", 230000, null, 36], ["Oblea de GNC", 35000, null, 12], ["Prueba hidráulica del tubo de GNC", 100000, null, 60],
-  ].map(([nombre, costo, cadaKm, cadaMeses]) => ({ nombre, costo, ...(cadaKm ? { cadaKm } : {}), ...(cadaMeses ? { cadaMeses } : {}), precio: "estimado" }));
+    ["Aceite + filtro", 54000, 7000, null, "c"], ["Alineación", 30000, 10000, null, "c"],
+    ["Amortiguadores delanteros (Sachs)", 258000, 80000, null, "c"], ["Amortiguadores traseros (Sachs)", 165000, 80000, null, "c"],
+    ["Bobina (Bosch)", 70000, 65000, null, "c"], ["Bujías y cables (NGK)", 75000, 20000, null, "c"],
+    ["Correa, tensor y bomba de agua", 95000, 60000, null, "c"], ["Cubiertas x4 (Firestone) + colocación", 460000, 80000],
+    ["Embrague (con mano de obra del mecánico)", 410000, 100000], ["Filtro de aire", 12000, 15000], ["Filtro de nafta", 25000, 50000],
+    ["Refrigerante", 20000, 40000, null, "c"], ["Termostato (Calorstat)", 20000, 80000, null, "c"],
+    ["Pastillas de freno (Bosch)", 40000, 30000, null, "c"], ["Discos de freno (Bosch)", 60000, 60000, null, "c"], ["Cintas de freno (Bosch)", 42000, 60000, null, "c"],
+    ["Batería Moura 12x75", 190000, null, 36, "c"], ["Oblea de GNC", 35000, null, 12], ["Prueba hidráulica del tubo de GNC", 100000, null, 60],
+    ["Bieletas, precaps y extremos (Nakata)", 160000, 60000, null, "c"], ["Rótulas", 75000, 80000, null, "c"],
+    ["Bujes de parrilla y barra estabilizadora (VTH)", 49000, 80000, null, "c"],
+    ["Rulemanes traseros", 64000, 100000, null, "c"], ["Rulemanes delanteros", 79000, 100000, null, "c"],
+  ].map(([nombre, costo, cadaKm, cadaMeses, c]) => ({ nombre, costo, ...(cadaKm ? { cadaKm } : {}), ...(cadaMeses ? { cadaMeses } : {}), precio: c ? "confirmado" : "estimado" }));
   const TARJETAS_INICIALES = [
     { id: "visa", nombre: "Visa Macro", tipo: "variable", cierres: [] },
     { id: "mp", nombre: "Mercado Pago", tipo: "fija", diaCierre: 5, diaVence: 10 },
@@ -482,6 +488,18 @@ details[open] summary { margin-bottom: 4px; }
       /* Mercado Libre se paga con la tarjeta de Mercado Pago. */
       out.reglas.forEach((r) => { if (/mercado libre|meli/i.test(r.palabras || "")) r.medio = "mp"; });
       out.seedVersion = 8;
+    }
+    if (out.seedVersion < 9) {
+      /* Precios reales que pasó Agus (lo que hace él va sin mano de obra) y tren delantero. No toca lo que ya confirmó a mano. */
+      const llave = (t) => sinAcento(t).replace(/\(.*?\)/g, "").replace(/[^a-z]+/g, " ").trim();
+      const viejos = { "alineacion y balanceo": "Alineación", "bujias": "Bujías y cables (NGK)", "cables de bujias": "Bujías y cables (NGK)",
+        "cubiertas delanteras": "Cubiertas x4 (Firestone) + colocación", "cubiertas traseras": "Cubiertas x4 (Firestone) + colocación",
+        "bateria": "Batería Moura 12x75", "embrague": "Embrague (con mano de obra del mecánico)" };
+      const nuevos = MANT_INICIAL.map((x) => ({ ...x, id: newId() }));
+      const quedan = out.mant.filter((x) => x.precio === "confirmado");
+      const tomados = new Set(quedan.map((x) => llave(viejos[llave(x.nombre)] || x.nombre)));
+      out.mant = [...quedan, ...nuevos.filter((x) => !tomados.has(llave(x.nombre)))];
+      out.seedVersion = 9;
     }
     return out;
   }

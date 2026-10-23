@@ -1,6 +1,6 @@
 // Guarda la app en el celu para que abra sin internet.
 // Al cambiar algo de la app, subir VERSION para que los celulares bajen la nueva.
-const VERSION = "v6";
+const VERSION = "v7";
 const APP_CACHE = "finanzas-app-" + VERSION;
 const FONT_CACHE = "finanzas-fonts";
 const APP_FILES = [
