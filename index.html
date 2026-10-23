@@ -386,7 +386,7 @@ details[open] summary { margin-bottom: 4px; }
     { nombre: "Peajes", palabras: "peaje, peajes, autopista, ausa, ausol", medio: "visa" },
     { nombre: "Repuestos", palabras: "repuesto, repuestos, expo repuestos", medio: "visa" },
     { nombre: "PedidosYa", palabras: "pedidosya, pedidos ya, pedido ya", medio: "visa" },
-    { nombre: "Mercado Libre", palabras: "mercado libre, meli", medio: "visa" },
+    { nombre: "Mercado Libre", palabras: "mercado libre, meli", medio: "mp" },
   ];
   const TARJETAS_INICIALES = [
     { id: "visa", nombre: "Visa Macro", tipo: "variable", cierres: [] },
@@ -466,6 +466,11 @@ details[open] summary { margin-bottom: 4px; }
       if (claude) Object.assign(claude, { medio: "efectivo", nota: "Débito de Naranja X" });
       out.seedVersion = 7;
     } else if (MEDIOS[d.medioDefault]) out.medioDefault = d.medioDefault;
+    if (out.seedVersion < 8) {
+      /* Mercado Libre se paga con la tarjeta de Mercado Pago. */
+      out.reglas.forEach((r) => { if (/mercado libre|meli/i.test(r.palabras || "")) r.medio = "mp"; });
+      out.seedVersion = 8;
+    }
     return out;
   }
   function loadStore() {
@@ -658,7 +663,7 @@ details[open] summary { margin-bottom: 4px; }
     $("#list-fijos").innerHTML = html;
 
     const gs = gastosMes(curMonth).filter((g) => !g.fijoId).sort((a, b) => b.fecha.localeCompare(a.fecha));
-    if (!gs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay gastos anotados en ${esc(mesLabel(curMonth))}. Escribilos arriba, por ejemplo: “súper 25000 visa, café 3000 efectivo”.</div>`;
+    if (!gs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay gastos anotados en ${esc(mesLabel(curMonth))}. Escribilos arriba, por ejemplo: “súper 25000, gnc 7500”.</div>`;
     else {
       const days = [...new Set(gs.map((g) => g.fecha))];
       $("#list-gastos").innerHTML = `<div class="rows">${days.map((d) => {
@@ -1219,8 +1224,8 @@ details[open] summary { margin-bottom: 4px; }
   const INC = /\b(hice|hize|gane|cobre|facture|recaude|ganancia|ganancias|didi)\b/;
   const UPD = /\b(subio|sube|subieron|aumento|aumentaron|ahora|esta a|esta en|cuesta|sale|salen|vale|paso a|nuevo precio|actualiza\w*|bajo)\b/;
   const CAT_WORDS = [
-    ["Comida y súper", "super supermercado chino almacen carniceria verduleria coto dia carrefour jumbo disco comida pollo carne fiambre panaderia pan verdura fruta huevos"],
-    ["Salidas", "salida salidas bar cerveza birra cena almuerzo restaurante resto pizza boliche cine cafe helado delivery rappi pedidosya hamburguesa sushi previa"],
+    ["Comida y súper", "super supermercado chino almacen carniceria verduleria coto dia carrefour jumbo disco comida pollo carne fiambre panaderia pan verdura fruta huevos cafe"],
+    ["Salidas", "salida salidas bar cerveza birra cena almuerzo restaurante resto pizza boliche cine helado delivery rappi pedidosya hamburguesa sushi previa"],
     ["Seguro del auto", "seguro"],
     ["GNC", "nafta gnc carga ypf shell axion puma"],
     ["Peajes", "peaje peajes autopista ausa ausol estacionamiento"],
