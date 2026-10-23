@@ -393,7 +393,7 @@ details[open] summary { margin-bottom: 4px; }
   const MANT_INICIAL = [
     ["Aceite + filtro", 54000, 7000, null, "c"], ["Alineación", 30000, 10000, null, "c"],
     ["Amortiguadores delanteros (Sachs)", 258000, 80000, null, "c"], ["Amortiguadores traseros (Sachs)", 165000, 80000, null, "c"],
-    ["Bobina (Bosch)", 70000, 65000, null, "c"], ["Bujías y cables (NGK)", 75000, 20000, null, "c"],
+    ["Bobina (Bosch)", 70000, 65000, null, "c"], ["Bujías (NGK)", 35000, 20000, null, "c"], ["Cables de bujías (NGK)", 40000, 40000, null, "c"],
     ["Correa, tensor y bomba de agua", 95000, 60000, null, "c"], ["Cubiertas x4 (Firestone) + colocación", 460000, 80000],
     ["Embrague (con mano de obra del mecánico)", 410000, 100000], ["Filtro de aire", 12000, 15000], ["Filtro de nafta", 25000, 50000],
     ["Refrigerante", 20000, 40000, null, "c"], ["Termostato (Calorstat)", 20000, 80000, null, "c"],
@@ -492,7 +492,7 @@ details[open] summary { margin-bottom: 4px; }
     if (out.seedVersion < 9) {
       /* Precios reales que pasó Agus (lo que hace él va sin mano de obra) y tren delantero. No toca lo que ya confirmó a mano. */
       const llave = (t) => sinAcento(t).replace(/\(.*?\)/g, "").replace(/[^a-z]+/g, " ").trim();
-      const viejos = { "alineacion y balanceo": "Alineación", "bujias": "Bujías y cables (NGK)", "cables de bujias": "Bujías y cables (NGK)",
+      const viejos = { "alineacion y balanceo": "Alineación", "bujias": "Bujías (NGK)", "cables de bujias": "Cables de bujías (NGK)",
         "cubiertas delanteras": "Cubiertas x4 (Firestone) + colocación", "cubiertas traseras": "Cubiertas x4 (Firestone) + colocación",
         "bateria": "Batería Moura 12x75", "embrague": "Embrague (con mano de obra del mecánico)" };
       const nuevos = MANT_INICIAL.map((x) => ({ ...x, id: newId() }));
@@ -500,6 +500,14 @@ details[open] summary { margin-bottom: 4px; }
       const tomados = new Set(quedan.map((x) => llave(viejos[llave(x.nombre)] || x.nombre)));
       out.mant = [...quedan, ...nuevos.filter((x) => !tomados.has(llave(x.nombre)))];
       out.seedVersion = 9;
+    }
+    if (out.seedVersion < 10) {
+      /* Bujías solas $35.000 (cada 20.000 km); los cables, el resto del juego de $75.000, duran el doble. */
+      const k = out.mant.findIndex((x) => x.nombre === "Bujías y cables (NGK)" && x.costo === 75000 && x.cadaKm === 20000);
+      if (k >= 0) out.mant.splice(k, 1,
+        { id: newId(), nombre: "Bujías (NGK)", costo: 35000, cadaKm: 20000, precio: "confirmado" },
+        { id: newId(), nombre: "Cables de bujías (NGK)", costo: 40000, cadaKm: 40000, precio: "confirmado" });
+      out.seedVersion = 10;
     }
     return out;
   }
