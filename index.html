@@ -363,7 +363,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v12"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v13"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -1845,7 +1845,11 @@ details[open] summary { margin-bottom: 4px; }
   renderAll();
 
   if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+    // Cuando baja una versión nueva, la app se recarga sola una vez para mostrarla (antes había que abrirla dos veces).
+    const habiaVersion = !!navigator.serviceWorker.controller;
+    let recargada = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (habiaVersion && !recargada) { recargada = true; location.reload(); } });
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {}); });
   }
 })();
 </script>
