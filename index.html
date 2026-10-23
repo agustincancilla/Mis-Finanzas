@@ -363,6 +363,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
+  const APP_VERSION = "v11"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -1707,6 +1708,7 @@ details[open] summary { margin-bottom: 4px; }
     const sheet = mountSheet(`
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="data-title">
         <h2 id="data-title">Datos y copias</h2>
+        <p class="tiny muted">Versión de la app: ${APP_VERSION}</p>
         <p class="small muted">Tus datos se guardan solo en este celu. Hacé una copia de vez en cuando y guardala en Drive o mandatela por WhatsApp, por si se borra la app o cambiás de teléfono.</p>
         <div class="sheet-section">
           <h3>Hacer copia de seguridad</h3>
