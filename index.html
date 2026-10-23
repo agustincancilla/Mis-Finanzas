@@ -509,6 +509,11 @@ details[open] summary { margin-bottom: 4px; }
         { id: newId(), nombre: "Cables de bujías (NGK)", costo: 40000, cadaKm: 40000, precio: "confirmado" });
       out.seedVersion = 10;
     }
+    if (out.seedVersion < 11) {
+      /* La carga en Shell del 08/10 fue nafta, no GNC. */
+      out.gastos.forEach((g) => { if (g.ref === "visa-2026-10-22:18") g.desc = "Nafta Shell Ital Pavón"; });
+      out.seedVersion = 11;
+    }
     return out;
   }
   function loadStore() {
