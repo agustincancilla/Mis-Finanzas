@@ -704,6 +704,27 @@ details[open] summary { margin-bottom: 4px; }
         </div>
       </div>`;
   }
+  /* Lo que deja trabajar en el mes: lo que cobra menos el auto y el monotributo. Lo que falta del mes se estima (GNC hasta el tope, seguro si no se pagó). */
+  function netoTrabajo(m) {
+    const det = ingresosDetalle(m);
+    const gs = gastosMes(m).filter((g) => AUTO_CATS.includes(g.cat));
+    const real = gs.reduce((t, g) => t + g.monto, 0);
+    let falta = 0;
+    const tope = store.fijos.find((f) => f.tipo === "tope" && f.cat === "GNC");
+    const gnc = gs.filter((g) => g.cat === "GNC").reduce((t, g) => t + g.monto, 0);
+    if (tope && tope.monto > gnc && m >= mk(today())) falta += tope.monto - gnc;
+    store.fijos.filter((f) => f.tipo === "pago" && AUTO_CATS.includes(f.cat) && !fijoPago(f, m)).forEach((f) => { falta += f.monto || 0; });
+    const mono = store.fijos.find((f) => /monotributo/i.test(f.nombre || ""));
+    const monoPago = mono ? fijoPago(mono, m) : null;
+    const monoMonto = monoPago ? monoPago.monto : mono ? mono.monto || 0 : 0;
+    const dias = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
+    return {
+      cobras: det.total, estimado: det.est > 0, auto: real + falta,
+      autoDetalle: falta ? `${money(real)} gastado + ${money(falta)} que falta (GNC hasta el tope, seguro)` : "GNC, peajes, seguro y mantenimiento",
+      mono: monoMonto, monoPagado: !!monoPago,
+      neto: det.total - real - falta - monoMonto, semanas: dias / 7,
+    };
+  }
   function renderGanancias() {
     const ing = store.ingreso;
     const box = $("#list-ingresos");
@@ -723,6 +744,17 @@ details[open] summary { margin-bottom: 4px; }
         <div class="small muted">${falta ? (quedan ? `Te faltan ${money(falta)} en ${quedan} ${quedan === 1 ? "día" : "días"}: unos ${money(falta / quedan)} por día.` : `Te faltaron ${money(falta)} para el mínimo.`) : `Hiciste ${money(hecho - ing.monto)} más que el mínimo.`}</div>
       </div>`;
     }
+    const n = netoTrabajo(curMonth);
+    if (n.cobras) html += `<div class="card">
+        <div class="card-row"><h3>Ganancia neta de trabajar</h3><span class="pill neutral">Mes completo</span></div>
+        <div class="big">${money(n.neto)}</div>
+        <div class="rows">
+          <div class="row no-check"><span><span class="name">Cobrás</span><br><span class="meta">${n.estimado ? "Lo anotado más el mínimo de los días que faltan" : "Lo que anotaste"}</span></span><span class="amt">${money(n.cobras)}</span></div>
+          <div class="row no-check"><span><span class="name">− Auto</span><br><span class="meta">${esc(n.autoDetalle)}</span></span><span class="amt">${money(n.auto)}</span></div>
+          <div class="row no-check"><span><span class="name">− Monotributo</span><br><span class="meta">${n.monoPagado ? "Pagado" : "Todavía no lo tildaste"}</span></span><span class="amt">${money(n.mono)}</span></div>
+        </div>
+        <div class="small muted">Es lo que te deja Didi antes del alquiler, la comida y lo demás. Unos ${money(n.neto / n.semanas)} por semana.</div>
+      </div>`;
     const l = store.ingresos.filter((x) => mk(x.fecha) === curMonth).sort((a, b) => b.fecha.localeCompare(a.fecha));
     const porDia = ing.frecuencia === "diario" && ing.monto ? ing.monto / ing.dias.length : null;
     if (!l.length) html += `<div class="empty">Todavía no anotaste lo que ganaste en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil”.</div>`;
