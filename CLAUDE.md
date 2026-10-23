@@ -10,6 +10,7 @@ App de finanzas personales de Agus: https://agustincancilla.github.io/Mis-Finanz
 - **Inversiones:** saldos por cuenta (ordenadas de más a menos, en USD; IOL en pesos con el dólar cargado a mano), reparto contra el objetivo 50/30/20 y fotos mensuales.
 - **Comida:** carnicería y verdulería con precio por unidad; "subió X%" desde el último cambio.
 - **Auto:** GNC (cargas, promedio, por día de trabajo, % de lo que cobra, contra el tope), peajes, mantenimiento, seguro; últimos 6 meses; service y repuestos con link a la Libreta del Voyage.
+- **Con qué se paga:** en la línea rápida, si no se aclara, va a efectivo/débito (`medioDefault`). Los fijos de tipo pago usan su medio (Seguro, Claro y Spotify: Visa; Claude: débito de Naranja X). `reglas` (pestaña Tarjetas, "Siempre con tarjeta"): palabras que se anotan con tarjeta solas (GNC, peajes, repuestos, PedidosYa, Mercado Libre: Visa, como en el resumen de septiembre).
 - Clave en el celu: `mis-finanzas-v1`. Gastos con `previo: true` son cuotas que ya venían de antes: cuentan en las tarjetas pero no en los gastos del mes.
 
 ## Cómo trabajar con Agus

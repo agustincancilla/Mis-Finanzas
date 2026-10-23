@@ -380,6 +380,14 @@ details[open] summary { margin-bottom: 4px; }
   const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
   const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
+  /* Lo que se anota con tarjeta aunque no se diga: palabras separadas por coma. */
+  const REGLAS_INICIALES = [
+    { nombre: "GNC y nafta", palabras: "gnc, nafta, carga, ypf, shell, axion", medio: "visa" },
+    { nombre: "Peajes", palabras: "peaje, peajes, autopista, ausa, ausol", medio: "visa" },
+    { nombre: "Repuestos", palabras: "repuesto, repuestos, expo repuestos", medio: "visa" },
+    { nombre: "PedidosYa", palabras: "pedidosya, pedidos ya, pedido ya", medio: "visa" },
+    { nombre: "Mercado Libre", palabras: "mercado libre, meli", medio: "visa" },
+  ];
   const TARJETAS_INICIALES = [
     { id: "visa", nombre: "Visa Macro", tipo: "variable", cierres: [] },
     { id: "mp", nombre: "Mercado Pago", tipo: "fija", diaCierre: 5, diaVence: 10 },
@@ -421,7 +429,7 @@ details[open] summary { margin-bottom: 4px; }
   /* ---------- Datos guardados en el celu ---------- */
   function emptyStore() {
     return {
-      ingreso: { frecuencia: "semanal", monto: 0, dia: 6 }, medioDefault: "visa", fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [],
+      ingreso: { frecuencia: "semanal", monto: 0, dia: 6 }, medioDefault: "efectivo", reglas: REGLAS_INICIALES.map((r) => ({ ...r, id: newId() })), fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [],
       tarjetas: JSON.parse(JSON.stringify(TARJETAS_INICIALES)), resumenes: {}, dolar: null,
       billeteras: [{ id: "nx", nombre: "Naranja X", saldo: null, tna: null, actualizado: null }, { id: "mpw", nombre: "Mercado Pago", saldo: null, tna: null, actualizado: null }],
     };
@@ -451,7 +459,13 @@ details[open] summary { margin-bottom: 4px; }
     const autoCat = (t) => { t = sinAcento(t); return /seguro/.test(t) ? "Seguro del auto" : /gnc|nafta|carga|ypf/.test(t) ? "GNC" : /peaje|autopista|estacionamiento/.test(t) ? "Peajes" : /repuesto|service|mecanic|aceite|gomeria|cubierta|filtro|taller/.test(t) ? "Mantenimiento del auto" : "Otros del auto"; };
     out.fijos.forEach((f) => { if (f.cat === "Auto") f.cat = autoCat(f.nombre); });
     out.gastos.forEach((g) => { if (g.cat === "Auto") g.cat = autoCat(g.desc); });
-    if (MEDIOS[d.medioDefault]) out.medioDefault = d.medioDefault;
+    if (Array.isArray(d.reglas)) out.reglas = d.reglas.filter((r) => r && typeof r === "object").map((r) => ({ ...r, id: String(r.id || newId()) }));
+    if (out.seedVersion < 7) {
+      /* Lo que no se aclara va a efectivo/débito; Claude se paga con el débito de Naranja X. */
+      const claude = out.fijos.find((f) => /claude/i.test(f.nombre || ""));
+      if (claude) Object.assign(claude, { medio: "efectivo", nota: "Débito de Naranja X" });
+      out.seedVersion = 7;
+    } else if (MEDIOS[d.medioDefault]) out.medioDefault = d.medioDefault;
     return out;
   }
   function loadStore() {
@@ -890,7 +904,19 @@ details[open] summary { margin-bottom: 4px; }
         <div class="small muted">${fechas}</div>
         ${pend}${open}${fut}
       </div>`;
-    }).join("");
+    }).join("") + reglasHtml();
+  }
+  function reglasHtml() {
+    const fijos = store.fijos.filter((f) => f.tipo === "pago" && f.medio && f.medio !== "efectivo");
+    return `<div class="panel" style="gap:10px">
+      <div class="panel-head"><h2>Siempre con tarjeta</h2><button class="btn btn-sm" type="button" data-add="reglas">+ Agregar</button></div>
+      <div class="small muted">Si nombrás algo de esto en la línea rápida y no decís con qué pagaste, se anota con esa tarjeta. Lo demás va a efectivo / débito.</div>
+      ${store.reglas.length ? `<div class="rows">${store.reglas.map((r) => `
+        <div class="row no-check"><button class="row-btn" type="button" data-edit="reglas" data-id="${esc(r.id)}">
+          <span><span class="name">${esc(r.nombre)}</span><br><span class="meta">${esc(r.palabras)}</span></span>
+          <span class="pill neutral">${esc(MEDIOS[r.medio] || "")}</span></button></div>`).join("")}</div>` : ""}
+      ${fijos.length ? `<div class="small muted">Gastos fijos con tarjeta: ${fijos.map((f) => `${esc(f.nombre)} (${esc(MEDIOS[f.medio])})`).join(", ")}.</div>` : ""}
+    </div>`;
   }
   function findResumen(key) { for (const card of buildCards()) { const c = card.list.find((x) => x.key === key); if (c) return c; } return null; }
   document.addEventListener("click", (e) => {
@@ -1124,7 +1150,7 @@ details[open] summary { margin-bottom: 4px; }
     html += `<div class="panel" style="gap:8px">
       <h3 class="group-title">Service y repuestos</h3>
       <div class="actions"><button class="btn btn-sm" type="button" data-add="gastos" data-cat="Mantenimiento del auto">+ Service o repuesto</button>
-        <button class="btn btn-sm" type="button" data-add="gastos" data-cat="GNC">+ Carga de GNC</button></div>
+        <button class="btn btn-sm" type="button" data-add="gastos" data-cat="GNC" data-medio="${esc(medioPorRegla("gnc") || store.medioDefault)}">+ Carga de GNC</button></div>
       ${mant.length ? `<div class="rows">${mant.slice(0, 15).map((g) => `
         <div class="row no-check"><button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
           <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${fmtDL(g.fecha)} · ${esc(MEDIOS[g.medio] || "")}</span></span>
@@ -1232,6 +1258,13 @@ details[open] summary { margin-bottom: 4px; }
     store.compras.forEach((c) => list.push({ kind: "compra", item: c, names: [c.nombre, ...String(c.alias || "").split(",")] }));
     return list;
   }
+  function medioPorRegla(n) {
+    for (const r of store.reglas) for (const w of String(r.palabras || "").split(",")) {
+      const ww = fold(w).trim(); if (ww.length < 2) continue;
+      if (new RegExp("(^|[^a-z0-9])" + reEsc(ww) + "([^a-z0-9]|$)").test(n)) return r.medio;
+    }
+    return null;
+  }
   function findItem(n) {
     let best = null;
     for (const k of knownItems()) for (const raw of k.names) {
@@ -1282,7 +1315,7 @@ details[open] summary { margin-bottom: 4px; }
     else if (match && match.kind === "fijo" && match.item.tipo === "pago" && !fijoPago(match.item, mk(fecha))) act = "pagar";
     const cat = match && match.kind === "fijo" ? match.item.cat : match && match.kind === "compra" ? "Comida y súper" : guessCat(n);
     if (match && (act !== "gasto" || !desc)) desc = match.item.nombre;
-    return { src: c.trim(), monto, cuotas, fecha, medio: medio || (match && match.kind === "fijo" && match.item.tipo === "pago" ? match.item.medio : store.medioDefault), match, act, cat, desc: cap(desc || "Gasto") };
+    return { src: c.trim(), monto, cuotas, fecha, medio: medio || (match && match.kind === "fijo" && match.item.tipo === "pago" ? match.item.medio : null) || medioPorRegla(n) || store.medioDefault, match, act, cat, desc: cap(desc || "Gasto") };
   }
   function itemLabel(it) { return it.kind === "fijo" ? `${it.item.nombre} (${money(it.item.monto)})` : `${it.item.nombre} (${money(it.item.precio)}/${it.item.unidad})`; }
   function openQuick(text) {
@@ -1380,6 +1413,11 @@ details[open] summary { margin-bottom: 4px; }
 
   /* ---------- Hojas: agregar / editar / borrar ---------- */
   const SCHEMAS = {
+    reglas: { title: "regla", fields: [
+      { k: "nombre", l: "Nombre", t: "text", req: true, hint: "Ej: GNC y nafta" },
+      { k: "palabras", l: "Palabras que lo nombran", t: "text", req: true, hint: "Separadas por coma. Ej: gnc, nafta, carga" },
+      { k: "medio", l: "Con qué lo pagás", t: "select", opts: MEDIO_OPTS },
+    ]},
     ingresos: { title: "ganancia", fields: [
       { k: "fecha", l: "Día", t: "date", req: true },
       { k: "monto", l: "Cuánto ganaste", t: "money", req: true },
@@ -1425,7 +1463,7 @@ details[open] summary { margin-bottom: 4px; }
       { k: "nota", l: "Nota", t: "area" },
     ]},
   };
-  const DEFAULTS = { ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }) };
+  const DEFAULTS = { reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }) };
 
   function closeSheet() { $("#sheet-root").innerHTML = ""; }
   function mountSheet(html) {
@@ -1506,7 +1544,7 @@ details[open] summary { margin-bottom: 4px; }
     });
   }
   document.addEventListener("click", (e) => {
-    const a = e.target.closest("[data-add]"); if (a) { openSheet(a.dataset.add, null, a.dataset.cat ? { cat: a.dataset.cat } : null); return; }
+    const a = e.target.closest("[data-add]"); if (a) { openSheet(a.dataset.add, null, a.dataset.cat ? { cat: a.dataset.cat, ...(a.dataset.medio ? { medio: a.dataset.medio } : {}) } : null); return; }
     const ed = e.target.closest("[data-edit]"); if (ed) { openSheet(ed.dataset.edit, ed.dataset.id); return; }
     if (e.target.closest("[data-open-data]")) openDataSheet();
   });
