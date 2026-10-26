@@ -95,6 +95,11 @@ a { color: var(--accent); }
 .tabs .wrap::-webkit-scrollbar { display: none; }
 .tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 8px 9px; white-space: nowrap; font-weight: 600; color: var(--muted); }
 .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.subtabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-inline: max(16px, env(safe-area-inset-left, 0px)); }
+.subtabs::-webkit-scrollbar { display: none; }
+.subtab { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 7px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.subtab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.ver-mas { width: 100%; margin-top: 10px; }
 
 main .wrap { padding-block: 18px 64px; }
 .panel { display: grid; gap: 18px; }
@@ -291,35 +296,52 @@ details[open] summary { margin-bottom: 4px; }
         <h2 id="mes-titulo"></h2>
         <button type="button" id="mes-next" aria-label="Mes siguiente">›</button>
       </div>
-      <div class="summary" id="mes-summary"></div>
-      <div class="forecast muted" id="mes-forecast"></div>
-
-      <div class="panel-head">
-        <h2>Lo que ganaste</h2>
-        <button class="btn btn-sm" type="button" data-add="ingresos">+ Ganancia</button>
+      <div class="subtabs" role="tablist" aria-label="Partes del mes">
+        <button class="subtab" type="button" role="tab" data-subtab="resumen" aria-selected="true">Resumen</button>
+        <button class="subtab" type="button" role="tab" data-subtab="dia" aria-selected="false">Día a día</button>
+        <button class="subtab" type="button" role="tab" data-subtab="fijos" aria-selected="false">Fijos</button>
+        <button class="subtab" type="button" role="tab" data-subtab="cats" aria-selected="false">En qué se fue</button>
+        <button class="subtab" type="button" role="tab" data-subtab="sale" aria-selected="false">Sale este mes</button>
       </div>
-      <div id="list-ingresos" class="panel" style="gap:10px"></div>
 
-      <div class="panel-head">
-        <h2>Gastos fijos</h2>
-        <div class="actions">
-          <button class="btn btn-sm" type="button" id="edit-sueldo">Ingresos</button>
-          <button class="btn btn-sm" type="button" data-add="fijos">+ Fijo</button>
+      <div class="panel" data-subpanel="resumen">
+        <div class="summary" id="mes-summary"></div>
+        <div class="forecast muted" id="mes-forecast"></div>
+        <div class="panel-head">
+          <h2>Lo que ganaste</h2>
+          <button class="btn btn-sm" type="button" data-add="ingresos">+ Ganancia</button>
         </div>
+        <div id="list-ingresos" class="panel" style="gap:10px"></div>
       </div>
-      <div id="list-fijos" class="panel" style="gap:10px"></div>
 
-      <div class="panel-head">
-        <h2>Día a día</h2>
-        <button class="btn btn-sm" type="button" data-add="gastos">+ Gasto</button>
+      <div class="panel" data-subpanel="dia" hidden>
+        <div class="panel-head">
+          <h2>Día a día</h2>
+          <button class="btn btn-sm" type="button" data-add="gastos">+ Gasto</button>
+        </div>
+        <div id="list-gastos"></div>
       </div>
-      <div id="list-gastos"></div>
 
-      <div class="panel-head"><h2>En qué se fue</h2></div>
-      <div id="list-cats"></div>
+      <div class="panel" data-subpanel="fijos" hidden>
+        <div class="panel-head">
+          <h2>Gastos fijos</h2>
+          <div class="actions">
+            <button class="btn btn-sm" type="button" id="edit-sueldo">Ingresos</button>
+            <button class="btn btn-sm" type="button" data-add="fijos">+ Fijo</button>
+          </div>
+        </div>
+        <div id="list-fijos" class="panel" style="gap:10px"></div>
+      </div>
 
-      <div class="panel-head"><h2>Plata que sale este mes</h2></div>
-      <div id="caja"></div>
+      <div class="panel" data-subpanel="cats" hidden>
+        <div class="panel-head"><h2>En qué se fue</h2></div>
+        <div id="list-cats"></div>
+      </div>
+
+      <div class="panel" data-subpanel="sale" hidden>
+        <div class="panel-head"><h2>Plata que sale este mes</h2></div>
+        <div id="caja"></div>
+      </div>
     </section>
 
     <section class="panel" id="p-tarjetas" role="tabpanel" hidden>
@@ -363,7 +385,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v13"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v14"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -721,7 +743,9 @@ details[open] summary { margin-bottom: 4px; }
     const gs = gastosMes(curMonth).filter((g) => !g.fijoId).sort((a, b) => b.fecha.localeCompare(a.fecha));
     if (!gs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay gastos anotados en ${esc(mesLabel(curMonth))}. Escribilos arriba, por ejemplo: “súper 25000, gnc 7500”.</div>`;
     else {
-      const days = [...new Set(gs.map((g) => g.fecha))];
+      const todos = [...new Set(gs.map((g) => g.fecha))];
+      const days = verTodoDia ? todos : todos.slice(0, 3);
+      const ocultos = gs.filter((g) => !days.includes(g.fecha)).length;
       $("#list-gastos").innerHTML = `<div class="rows">${days.map((d) => {
         const l = gs.filter((g) => g.fecha === d);
         return `<div class="day-title">${esc(diaLabel(d))} · ${money(l.reduce((s, g) => s + g.monto, 0))}</div>` + l.map((g) => `
@@ -731,7 +755,7 @@ details[open] summary { margin-bottom: 4px; }
               <span class="amt">${money(g.monto)}</span>
             </button>
           </div>`).join("");
-      }).join("")}</div>`;
+      }).join("")}</div>${todos.length > 3 ? `<button class="btn ver-mas" type="button" data-ver-dia>${verTodoDia ? "Ver menos" : `Ver más (${ocultos} ${ocultos === 1 ? "gasto" : "gastos"} de ${todos.length - 3} ${todos.length - 3 === 1 ? "día" : "días"} más)`}</button>` : ""}`;
     }
 
     const all = gastosMes(curMonth);
@@ -823,6 +847,14 @@ details[open] summary { margin-bottom: 4px; }
         <span class="amt">${money(x.monto)}</span></button></div>`).join("")}</div>`;
     box.innerHTML = html;
   }
+  /* Sub-pestañas de Mes: siempre abre en Resumen. Día a día muestra los últimos 3 días con gastos y "Ver más". */
+  let verTodoDia = false;
+  function showSubtab(name) {
+    document.querySelectorAll("[data-subtab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.subtab === name)));
+    document.querySelectorAll("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== name; });
+  }
+  document.querySelectorAll("[data-subtab]").forEach((b) => b.addEventListener("click", () => showSubtab(b.dataset.subtab)));
+  $("#list-gastos").addEventListener("click", (e) => { if (e.target.closest("[data-ver-dia]")) { verTodoDia = !verTodoDia; renderMes(); } });
   $("#mes-prev").addEventListener("click", () => { curMonth = shiftMonth(curMonth, -1); renderMes(); renderAuto(); });
   $("#mes-next").addEventListener("click", () => { curMonth = shiftMonth(curMonth, 1); renderMes(); renderAuto(); });
   $("#list-fijos").addEventListener("click", (e) => { if (e.target.closest("[data-ir-tarjetas]")) { showTab("tarjetas"); window.scrollTo(0, 0); } });
