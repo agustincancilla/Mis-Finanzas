@@ -100,6 +100,8 @@ a { color: var(--accent); }
 .subtab { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 7px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .subtab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .ver-mas { width: 100%; margin-top: 10px; }
+.in { color: var(--ok); }
+.row.neutral .amt, .row.neutral .name { color: var(--muted); }
 
 main .wrap { padding-block: 18px 64px; }
 .panel { display: grid; gap: 18px; }
@@ -317,7 +319,10 @@ details[open] summary { margin-bottom: 4px; }
       <div class="panel" data-subpanel="dia" hidden>
         <div class="panel-head">
           <h2>Día a día</h2>
-          <button class="btn btn-sm" type="button" data-add="gastos">+ Gasto</button>
+          <div class="actions">
+            <button class="btn btn-sm" type="button" data-add="ingresos">+ Ganancia</button>
+            <button class="btn btn-sm" type="button" data-add="gastos">+ Gasto</button>
+          </div>
         </div>
         <div id="list-gastos"></div>
       </div>
@@ -385,7 +390,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v14"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v15"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -740,22 +745,44 @@ details[open] summary { margin-bottom: 4px; }
     }
     $("#list-fijos").innerHTML = html;
 
-    const gs = gastosMes(curMonth).filter((g) => !g.fijoId).sort((a, b) => b.fecha.localeCompare(a.fecha));
-    if (!gs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay gastos anotados en ${esc(mesLabel(curMonth))}. Escribilos arriba, por ejemplo: “súper 25000, gnc 7500”.</div>`;
+    // Día a día: todo lo que pasó en el mes, día por día: ganancias, gastos (también los fijos que pagaste) y pagos de tarjetas.
+    const movs = [
+      ...store.ingresos.filter((x) => mk(x.fecha) === curMonth).map((x) => ({ tipo: "ingreso", fecha: x.fecha, x })),
+      ...gastosMes(curMonth).map((g) => ({ tipo: "gasto", fecha: g.fecha, g })),
+      ...Object.entries(store.resumenes).filter(([, r]) => r.pagado && mk(r.pagado) === curMonth).map(([key, r]) => ({ tipo: "tarjeta", fecha: r.pagado, key, r })),
+    ];
+    if (!movs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay nada anotado en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil, súper 25000, gnc 7500”.</div>`;
     else {
-      const todos = [...new Set(gs.map((g) => g.fecha))];
+      const todos = [...new Set(movs.map((m) => m.fecha))].sort().reverse();
       const days = verTodoDia ? todos : todos.slice(0, 3);
-      const ocultos = gs.filter((g) => !days.includes(g.fecha)).length;
+      const ocultos = movs.filter((m) => !days.includes(m.fecha)).length;
+      const orden = { ingreso: 0, gasto: 1, tarjeta: 2 };
+      const fila = (m) => {
+        if (m.tipo === "ingreso") return `
+          <div class="row no-check"><button class="row-btn" type="button" data-edit="ingresos" data-id="${esc(m.x.id)}">
+            <span><span class="name">Ganancia</span><br><span class="meta">Ingreso${m.x.nota ? " · " + esc(m.x.nota) : ""}</span></span>
+            <span class="amt in">+${money(m.x.monto)}</span></button></div>`;
+        if (m.tipo === "tarjeta") {
+          const t = store.tarjetas.find((x) => m.key.startsWith(x.id + "|"));
+          const b = store.billeteras.find((x) => x.id === m.r.pagadoDe);
+          return `
+          <div class="row no-check neutral"><button class="row-btn" type="button" data-ir-tarjetas>
+            <span><span class="name">Pagaste el resumen ${esc(t ? t.nombre : "")}</span><br><span class="meta">${b ? `Desde ${esc(b.nombre)} · ` : ""}No suma: esos gastos ya están anotados</span></span>
+            <span class="amt">${money(m.r.pagadoMonto || 0)}</span></button></div>`;
+        }
+        const g = m.g;
+        return `
+          <div class="row no-check"><button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
+            <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${g.fijoId ? "Gasto fijo · " : ""}${esc(g.cat || "Otros")} · ${esc(MEDIOS[g.medio] || "")}${g.cuotas > 1 ? ` · ${g.cuotas} cuotas de ${money(g.monto / g.cuotas)}` : ""}</span></span>
+            <span class="amt">−${money(g.monto)}</span></button></div>`;
+      };
       $("#list-gastos").innerHTML = `<div class="rows">${days.map((d) => {
-        const l = gs.filter((g) => g.fecha === d);
-        return `<div class="day-title">${esc(diaLabel(d))} · ${money(l.reduce((s, g) => s + g.monto, 0))}</div>` + l.map((g) => `
-          <div class="row no-check">
-            <button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
-              <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${esc(g.cat || "Otros")} · ${esc(MEDIOS[g.medio] || "")}${g.cuotas > 1 ? ` · ${g.cuotas} cuotas de ${money(g.monto / g.cuotas)}` : ""}</span></span>
-              <span class="amt">${money(g.monto)}</span>
-            </button>
-          </div>`).join("");
-      }).join("")}</div>${todos.length > 3 ? `<button class="btn ver-mas" type="button" data-ver-dia>${verTodoDia ? "Ver menos" : `Ver más (${ocultos} ${ocultos === 1 ? "gasto" : "gastos"} de ${todos.length - 3} ${todos.length - 3 === 1 ? "día" : "días"} más)`}</button>` : ""}`;
+        const l = movs.filter((m) => m.fecha === d).sort((a, b) => orden[a.tipo] - orden[b.tipo]);
+        const entra = l.filter((m) => m.tipo === "ingreso").reduce((t, m) => t + m.x.monto, 0);
+        const sale = l.filter((m) => m.tipo === "gasto").reduce((t, m) => t + m.g.monto, 0);
+        const tot = [entra ? `<span class="in">+${money(entra)}</span>` : "", sale ? `−${money(sale)}` : ""].filter(Boolean).join(" · ");
+        return `<div class="day-title">${esc(diaLabel(d))}${tot ? " · " + tot : ""}</div>` + l.map(fila).join("");
+      }).join("")}</div>${todos.length > 3 ? `<button class="btn ver-mas" type="button" data-ver-dia>${verTodoDia ? "Ver menos" : `Ver más (${ocultos} ${ocultos === 1 ? "movimiento" : "movimientos"} de ${todos.length - 3} ${todos.length - 3 === 1 ? "día" : "días"} más)`}</button>` : ""}`;
     }
 
     const all = gastosMes(curMonth);
@@ -854,7 +881,10 @@ details[open] summary { margin-bottom: 4px; }
     document.querySelectorAll("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== name; });
   }
   document.querySelectorAll("[data-subtab]").forEach((b) => b.addEventListener("click", () => showSubtab(b.dataset.subtab)));
-  $("#list-gastos").addEventListener("click", (e) => { if (e.target.closest("[data-ver-dia]")) { verTodoDia = !verTodoDia; renderMes(); } });
+  $("#list-gastos").addEventListener("click", (e) => {
+    if (e.target.closest("[data-ver-dia]")) { verTodoDia = !verTodoDia; renderMes(); return; }
+    if (e.target.closest("[data-ir-tarjetas]")) { showTab("tarjetas"); window.scrollTo(0, 0); }
+  });
   $("#mes-prev").addEventListener("click", () => { curMonth = shiftMonth(curMonth, -1); renderMes(); renderAuto(); });
   $("#mes-next").addEventListener("click", () => { curMonth = shiftMonth(curMonth, 1); renderMes(); renderAuto(); });
   $("#list-fijos").addEventListener("click", (e) => { if (e.target.closest("[data-ir-tarjetas]")) { showTab("tarjetas"); window.scrollTo(0, 0); } });
