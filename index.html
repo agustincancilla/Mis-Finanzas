@@ -390,7 +390,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v16"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v17"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -834,23 +834,42 @@ details[open] summary { margin-bottom: 4px; }
       neto: det.total - real - falta - reserva - monoMonto, semanas: dias / 7,
     };
   }
+  let semanaVista = 0;
   function renderGanancias() {
     const ing = store.ingreso;
     const box = $("#list-ingresos");
     let html = "";
-    if (curMonth === mk(today()) && ing.frecuencia === "diario" && ing.monto) {
-      const ini = lunesDe(today()), fin = addDays(ini, 6);
-      const hecho = store.ingresos.filter((x) => x.fecha >= ini && x.fecha <= fin).reduce((t, x) => t + x.monto, 0);
+    if (ing.frecuencia === "diario" && ing.monto) {
+      // Semana elegida con las flechas: 0 = esta semana, -1 = la pasada, etc.
+      const ini = addDays(lunesDe(today()), 7 * semanaVista), fin = addDays(ini, 6);
+      const actual = semanaVista === 0;
+      const deSemana = store.ingresos.filter((x) => x.fecha >= ini && x.fecha <= fin);
+      const hecho = deSemana.reduce((t, x) => t + x.monto, 0);
       const anotadoHoy = store.ingresos.some((x) => x.fecha === today());
       let quedan = 0;
-      for (let d = anotadoHoy ? addDays(today(), 1) : today(); d <= fin; d = addDays(d, 1)) if (ing.dias.includes(parseIso(d).getDay())) quedan++;
+      if (actual) for (let d = anotadoHoy ? addDays(today(), 1) : today(); d <= fin; d = addDays(d, 1)) if (ing.dias.includes(parseIso(d).getDay())) quedan++;
       const falta = Math.max(0, ing.monto - hecho);
       const pct = Math.min(1, hecho / ing.monto);
+      const titulo = actual ? "Esta semana" : semanaVista === -1 ? "Semana pasada" : `Semana del ${fmtD(ini)}`;
+      const porDiaSemana = [];
+      for (let d = ini; d <= fin; d = addDays(d, 1)) {
+        const v = deSemana.filter((x) => x.fecha === d).reduce((t, x) => t + x.monto, 0);
+        if (v || (ing.dias.includes(parseIso(d).getDay()) && d <= today())) porDiaSemana.push([d, v]);
+      }
       html += `<div class="card">
-        <div class="card-row"><h3>Esta semana</h3><span class="pill ${falta ? "neutral" : "ok"}">${falta ? `${fmtD(ini)} al ${fmtD(fin)}` : "Mínimo cumplido"}</span></div>
+        <div class="card-row">
+          <div class="actions" style="gap:6px;flex-wrap:nowrap">
+            <button class="btn btn-sm" type="button" data-semana="-1" aria-label="Semana anterior">‹</button>
+            <h3>${titulo}</h3>
+            <button class="btn btn-sm" type="button" data-semana="1" aria-label="Semana siguiente" ${actual ? "disabled" : ""}>›</button>
+          </div>
+          <span class="pill ${falta ? "neutral" : "ok"}">${falta ? `${fmtD(ini)} al ${fmtD(fin)}` : "Mínimo cumplido"}</span>
+        </div>
         <div><span class="big">${money(hecho)}</span> <span class="muted small">de ${money(ing.monto)} mínimo</span></div>
         <div class="bar ${falta ? "accent" : ""}" aria-hidden="true"><i style="width:${Math.round(pct * 100)}%"></i></div>
         <div class="small muted">${falta ? (quedan ? `Te faltan ${money(falta)} en ${quedan} ${quedan === 1 ? "día" : "días"}: unos ${money(falta / quedan)} por día.` : `Te faltaron ${money(falta)} para el mínimo.`) : `Hiciste ${money(hecho - ing.monto)} más que el mínimo.`}</div>
+        ${!actual && porDiaSemana.length ? `<div class="kv">${porDiaSemana.map(([d, v]) => `<span>${esc(cap(DIAS[parseIso(d).getDay()].slice(0, 3)))} ${fmtD(d)} <b>${v ? money(v) : "—"}</b></span>`).join("")}</div>` : ""}
+        ${!actual ? `<button class="linkbtn" type="button" data-semana="0">Volver a esta semana</button>` : ""}
       </div>`;
     }
     const n = netoTrabajo(curMonth);
@@ -881,6 +900,12 @@ details[open] summary { margin-bottom: 4px; }
     document.querySelectorAll("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== name; });
   }
   document.querySelectorAll("[data-subtab]").forEach((b) => b.addEventListener("click", () => showSubtab(b.dataset.subtab)));
+  $("#list-ingresos").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-semana]"); if (!b) return;
+    const v = Number(b.dataset.semana);
+    semanaVista = v === 0 ? 0 : Math.min(0, semanaVista + v);
+    renderGanancias();
+  });
   $("#list-gastos").addEventListener("click", (e) => {
     if (e.target.closest("[data-ver-dia]")) { verTodoDia = !verTodoDia; renderMes(); return; }
     if (e.target.closest("[data-ir-tarjetas]")) { showTab("tarjetas"); window.scrollTo(0, 0); }
