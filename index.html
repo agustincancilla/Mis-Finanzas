@@ -390,7 +390,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v15"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v16"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -854,8 +854,15 @@ details[open] summary { margin-bottom: 4px; }
       </div>`;
     }
     const n = netoTrabajo(curMonth);
+    const l = store.ingresos.filter((x) => mk(x.fecha) === curMonth).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const porDia = ing.frecuencia === "diario" && ing.monto ? ing.monto / ing.dias.length : null;
+    if (!l.length) html += `<div class="empty">Todavía no anotaste lo que ganaste en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil”.</div>`;
+    else html += `<div class="rows">${l.map((x) => `
+      <div class="row no-check"><button class="row-btn" type="button" data-edit="ingresos" data-id="${esc(x.id)}">
+        <span><span class="name">${esc(cap(diaLabel(x.fecha)))}</span><br><span class="meta">${porDia ? (x.monto >= porDia ? "Arriba del mínimo diario" : "Abajo del mínimo diario") : ""}${x.nota ? (porDia ? " · " : "") + esc(x.nota) : ""}</span></span>
+        <span class="amt">${money(x.monto)}</span></button></div>`).join("")}</div>`;
     if (n.cobras) html += `<div class="card">
-        <div class="card-row"><h3>Ganancia neta de trabajar</h3><span class="pill neutral">Mes completo</span></div>
+        <div class="card-row"><h3>Ganancia Neta</h3><span class="pill neutral">Mes completo</span></div>
         <div class="big">${money(n.neto)}</div>
         <div class="rows">
           <div class="row no-check"><span><span class="name">Cobrás</span><br><span class="meta">${n.estimado ? "Lo anotado más el mínimo de los días que faltan" : "Lo que anotaste"}</span></span><span class="amt">${money(n.cobras)}</span></div>
@@ -865,13 +872,6 @@ details[open] summary { margin-bottom: 4px; }
         </div>
         <div class="small muted">Es lo que te deja Didi antes del alquiler, la comida y lo demás. Unos ${money(n.neto / n.semanas)} por semana.</div>
       </div>`;
-    const l = store.ingresos.filter((x) => mk(x.fecha) === curMonth).sort((a, b) => b.fecha.localeCompare(a.fecha));
-    const porDia = ing.frecuencia === "diario" && ing.monto ? ing.monto / ing.dias.length : null;
-    if (!l.length) html += `<div class="empty">Todavía no anotaste lo que ganaste en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil”.</div>`;
-    else html += `<div class="rows">${l.map((x) => `
-      <div class="row no-check"><button class="row-btn" type="button" data-edit="ingresos" data-id="${esc(x.id)}">
-        <span><span class="name">${esc(cap(diaLabel(x.fecha)))}</span><br><span class="meta">${porDia ? (x.monto >= porDia ? "Arriba del mínimo diario" : "Abajo del mínimo diario") : ""}${x.nota ? (porDia ? " · " : "") + esc(x.nota) : ""}</span></span>
-        <span class="amt">${money(x.monto)}</span></button></div>`).join("")}</div>`;
     box.innerHTML = html;
   }
   /* Sub-pestañas de Mes: siempre abre en Resumen. Día a día muestra los últimos 3 días con gastos y "Ver más". */
