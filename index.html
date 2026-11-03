@@ -139,7 +139,6 @@ main .wrap { padding-block: 18px 64px; }
 .sum.ok { background: var(--ok-bg); border-color: transparent; color: var(--ok); }
 .sum.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
 .sum.ok span, .sum.bad span { color: inherit; }
-.sum-est { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .forecast { font-size: 15px; }
 .forecast b { font-variant-numeric: tabular-nums; }
 
@@ -391,7 +390,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v18"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v19"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -623,7 +622,7 @@ details[open] summary { margin-bottom: 4px; }
     for (const f of topes) proyectado += Math.max(f.monto || 0, gastadoCat(f.cat, m));
     proyectado += gs.filter((g) => !g.fijoId && !tc.has(g.cat)).reduce((s, g) => s + g.monto, 0);
     const det = ingresosDetalle(m);
-    return { gastado, cobrado: det.real, estimado: det.total, queda: det.real - gastado, proyectado, final: det.total - proyectado };
+    return { gastado, cobras: det.total, queda: det.total - gastado, proyectado, final: det.total - proyectado };
   }
 
   /* ---------- Tarjetas: cierres, resúmenes y cuotas ---------- */
@@ -692,11 +691,11 @@ details[open] summary { margin-bottom: 4px; }
     $("#mes-titulo").textContent = cap(mesLabel(curMonth));
     const r = resumenMes(curMonth);
     $("#mes-summary").innerHTML = `
-      <div class="sum"><span>Cobraste</span><b>${money(r.cobrado)}</b>${r.estimado > r.cobrado ? `<small class="sum-est">de ~${money(r.estimado)} estimado</small>` : ""}</div>
+      <div class="sum"><span>Cobrás</span><b>${money(r.cobras)}</b></div>
       <div class="sum"><span>Gastaste</span><b>${money(r.gastado)}</b></div>
       <div class="sum ${r.queda >= 0 ? "ok" : "bad"}"><span>Te queda</span><b>${money(r.queda)}</b></div>`;
     const det = ingresosDetalle(curMonth);
-    $("#mes-forecast").innerHTML = `${det.est ? `Si los días que faltan hacés el mínimo, cobrás <b>${money(det.total)}</b> en el mes (${money(det.real)} anotado + ${money(det.est)} por cobrar). ` : ""}Si pagás todos los fijos y no te pasás de los topes, terminás el mes con <b>${money(r.final)}</b> para ahorrar.`;
+    $("#mes-forecast").innerHTML = `${det.real || det.est ? `De lo que cobrás, <b>${money(det.real)}</b> ya lo anotaste y <b>${money(det.est)}</b> es lo estimado para los días que faltan (los días que pasan sin anotar no suman). ` : ""}Si pagás todos los fijos y no te pasás de los topes, terminás el mes con <b>${money(r.final)}</b> para ahorrar.`;
     renderGanancias();
 
     const pagos = store.fijos.filter((f) => f.tipo === "pago");
