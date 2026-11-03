@@ -139,6 +139,7 @@ main .wrap { padding-block: 18px 64px; }
 .sum.ok { background: var(--ok-bg); border-color: transparent; color: var(--ok); }
 .sum.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
 .sum.ok span, .sum.bad span { color: inherit; }
+.sum-est { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .forecast { font-size: 15px; }
 .forecast b { font-variant-numeric: tabular-nums; }
 
@@ -390,7 +391,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v17"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v18"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -588,7 +589,8 @@ details[open] summary { margin-bottom: 4px; }
       if (reales[d] != null) { out.push({ fecha: d, monto: reales[d], real: true }); continue; }
       if (!ing.monto) continue;
       const dt = parseIso(d);
-      if (ing.frecuencia === "diario") { if (ing.dias.includes(dt.getDay())) out.push({ fecha: d, monto: ing.monto / ing.dias.length }); continue; }
+      // Por día: lo que ya pasó cuenta solo si se anotó; hoy y los días que vienen se estiman con el mínimo.
+      if (ing.frecuencia === "diario") { if (d >= today() && ing.dias.includes(dt.getDay())) out.push({ fecha: d, monto: ing.monto / ing.dias.length }); continue; }
       const hit = ing.frecuencia === "semanal" ? dt.getDay() === ing.dia
         : d === ymd(dt.getFullYear(), dt.getMonth() + 1, ing.dia);
       if (hit) out.push({ fecha: d, monto: ing.monto });
@@ -620,8 +622,8 @@ details[open] summary { margin-bottom: 4px; }
     const tc = topeCats();
     for (const f of topes) proyectado += Math.max(f.monto || 0, gastadoCat(f.cat, m));
     proyectado += gs.filter((g) => !g.fijoId && !tc.has(g.cat)).reduce((s, g) => s + g.monto, 0);
-    const ing = ingresosMes(m);
-    return { gastado, queda: ing - gastado, proyectado, final: ing - proyectado };
+    const det = ingresosDetalle(m);
+    return { gastado, cobrado: det.real, estimado: det.total, queda: det.real - gastado, proyectado, final: det.total - proyectado };
   }
 
   /* ---------- Tarjetas: cierres, resúmenes y cuotas ---------- */
@@ -690,11 +692,11 @@ details[open] summary { margin-bottom: 4px; }
     $("#mes-titulo").textContent = cap(mesLabel(curMonth));
     const r = resumenMes(curMonth);
     $("#mes-summary").innerHTML = `
-      <div class="sum"><span>Cobrás</span><b>${money(ingresosMes(curMonth))}</b></div>
+      <div class="sum"><span>Cobraste</span><b>${money(r.cobrado)}</b>${r.estimado > r.cobrado ? `<small class="sum-est">de ~${money(r.estimado)} estimado</small>` : ""}</div>
       <div class="sum"><span>Gastaste</span><b>${money(r.gastado)}</b></div>
       <div class="sum ${r.queda >= 0 ? "ok" : "bad"}"><span>Te queda</span><b>${money(r.queda)}</b></div>`;
     const det = ingresosDetalle(curMonth);
-    $("#mes-forecast").innerHTML = `${det.real ? `De lo que cobrás, <b>${money(det.real)}</b> ya lo anotaste y <b>${money(det.est)}</b> es lo estimado para los días sin anotar. ` : ""}Si pagás todos los fijos y no te pasás de los topes, terminás el mes con <b>${money(r.final)}</b> para ahorrar.`;
+    $("#mes-forecast").innerHTML = `${det.est ? `Si los días que faltan hacés el mínimo, cobrás <b>${money(det.total)}</b> en el mes (${money(det.real)} anotado + ${money(det.est)} por cobrar). ` : ""}Si pagás todos los fijos y no te pasás de los topes, terminás el mes con <b>${money(r.final)}</b> para ahorrar.`;
     renderGanancias();
 
     const pagos = store.fijos.filter((f) => f.tipo === "pago");
@@ -839,6 +841,16 @@ details[open] summary { margin-bottom: 4px; }
     const ing = store.ingreso;
     const box = $("#list-ingresos");
     let html = "";
+    if (ing.frecuencia === "diario" && store.ingresos.length) {
+      // Días de trabajo de la última semana (sin contar hoy) que no tienen lo ganado anotado: no suman hasta que se anoten.
+      const sinAnotar = [];
+      for (let k = 1; k <= 7; k++) {
+        const d = addDays(today(), -k);
+        if (ing.dias.includes(parseIso(d).getDay()) && !store.ingresos.some((x) => x.fecha === d)) sinAnotar.push(d);
+      }
+      if (sinAnotar.length) html += `<div class="banner"><span>${sinAnotar.length === 1 && sinAnotar[0] === addDays(today(), -1) ? "Ayer no anotaste lo que ganaste." : `No anotaste lo que ganaste: ${sinAnotar.map((d) => `${DIAS[parseIso(d).getDay()].slice(0, 3)} ${fmtD(d)}`).join(", ")}.`} Hasta que lo anotes, no suma (si no trabajaste, anotá 0).</span>
+        <button class="btn btn-sm" type="button" data-anotar-dia="${sinAnotar[0]}">Anotar ${sinAnotar[0] === addDays(today(), -1) ? "lo de ayer" : `lo del ${fmtD(sinAnotar[0])}`}</button></div>`;
+    }
     if (ing.frecuencia === "diario" && ing.monto) {
       // Semana elegida con las flechas: 0 = esta semana, -1 = la pasada, etc.
       const ini = addDays(lunesDe(today()), 7 * semanaVista), fin = addDays(ini, 6);
@@ -901,6 +913,8 @@ details[open] summary { margin-bottom: 4px; }
   }
   document.querySelectorAll("[data-subtab]").forEach((b) => b.addEventListener("click", () => showSubtab(b.dataset.subtab)));
   $("#list-ingresos").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-anotar-dia]");
+    if (a) { openSheet("ingresos", null, { fecha: a.dataset.anotarDia }); return; }
     const b = e.target.closest("[data-semana]"); if (!b) return;
     const v = Number(b.dataset.semana);
     semanaVista = v === 0 ? 0 : Math.min(0, semanaVista + v);
