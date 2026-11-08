@@ -390,7 +390,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v19"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v20"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -1065,12 +1065,14 @@ details[open] summary { margin-bottom: 4px; }
   }
   function renderTarjetas() {
     const cards = buildCards();
-    const proximos = [];
+    // A pagar: solo los resúmenes que ya cerraron. Los abiertos se muestran aparte, como información (pedido de Agus).
+    const proximos = [], abiertos = [];
     cards.forEach(({ t, aPagar, abierto }) => {
       aPagar.forEach((c) => proximos.push({ t, c, cerrado: true }));
-      if (abierto && !abierto.pagado && abierto.total > 0) proximos.push({ t, c: abierto, cerrado: false });
+      if (abierto && !abierto.pagado && abierto.total > 0) abiertos.push({ t, c: abierto });
     });
     proximos.sort((a, b) => a.c.vence.localeCompare(b.c.vence));
+    abiertos.sort((a, b) => a.c.vence.localeCompare(b.c.vence));
     const total = proximos.reduce((s, p) => s + p.c.total, 0);
     const bils = store.billeteras;
     const disp = bils.reduce((a, b) => a + (b.saldo || 0), 0);
@@ -1085,7 +1087,7 @@ details[open] summary { margin-bottom: 4px; }
     const hayBil = bils.some((b) => b.saldo != null);
     let verdict = "";
     if (!hayBil) verdict = `<div class="small muted">Cargá cuánto tenés en cada billetera para saber si te alcanza.</div>`;
-    else if (!proximos.length) verdict = "";
+    else if (!proximos.length) verdict = `<div class="small muted">No tenés resúmenes cerrados para pagar ahora.</div>`;
     else if (peor) verdict = `<div class="verdict bad">Para el ${fmtD(peor.c.vence)} (${esc(peor.t.nombre)}) te faltarían ${money(-peor.despues)}, aun contando lo que cobrás hasta ese día.</div>`;
     else verdict = `<div class="verdict ok">Te alcanza. Contando lo que cobrás hasta el ${fmtD(ultimo)} (${money(cobrado)}), después de pagar todo te quedan ${money(saldo)}.</div>`;
     if (hayBil && proximos.length) verdict += `<div class="tiny muted">No descuenta el alquiler, los otros fijos ni lo que gastes en efectivo en esos días.</div>`;
@@ -1109,11 +1111,13 @@ details[open] summary { margin-bottom: 4px; }
         }).join("")}</div>
         <div class="small muted">Próximos vencimientos</div>
         <div class="rows">
-          ${proximos.length ? proximos.map((p) => { const { t, c, cerrado } = p; return  `<div class="row no-check"><span><span class="name">${esc(t.nombre)}</span><br><span class="meta">Vence ${fmtD(c.vence)}${c.est ? " (estimado)" : ""} · ${cerrado ? "resumen cerrado" : "abierto, puede subir"}${hayBil ? ` · después te quedan ${money(p.despues)}` : ""}</span></span><span class="amt">${money(c.total)}</span></div>`; }).join("")
-            : `<div class="row no-check"><span class="meta">No hay resúmenes con gastos anotados.</span><span></span></div>`}
+          ${proximos.length ? proximos.map((p) => { const { t, c } = p; return `<div class="row no-check"><span><span class="name">${esc(t.nombre)}</span><br><span class="meta">Vence ${fmtD(c.vence)}${c.est ? " (estimado)" : ""} · resumen cerrado${hayBil ? ` · después te quedan ${money(p.despues)}` : ""}</span></span><span class="amt">${money(c.total)}</span></div>`; }).join("")
+            : `<div class="row no-check"><span class="meta">No hay resúmenes cerrados sin pagar.</span><span></span></div>`}
           <div class="row no-check"><span class="name">Total a pagar</span><span class="amt">${money(total)}</span></div>
         </div>
         ${verdict}
+        ${abiertos.length ? `<div class="small muted">Lo que viene (resumen abierto, no se suma al total)</div>
+        <div class="rows">${abiertos.map(({ t, c }) => `<div class="row no-check"><span><span class="name">${esc(t.nombre)}</span><br><span class="meta">Cierra ${fmtD(c.cierre)}${c.est ? " (estimado)" : ""} · vence ${fmtD(c.vence)} · puede subir</span></span><span class="amt">${money(c.total)}</span></div>`).join("")}</div>` : ""}
       </div>`;
 
     $("#list-tarjetas").innerHTML = cards.map(({ t, aPagar, abierto, futuros }) => {
