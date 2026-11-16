@@ -38,3 +38,7 @@ App web instalable (PWA) que anda sin internet, en GitHub Pages. Este repo es **
 3. Si cambia la forma de los datos, que `normalize()` siga aceptando las copias viejas: Agus tiene datos cargados que no se pueden perder.
 4. Commit (terminar el mensaje con `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`) y push a `main`.
 5. Avisarle: desde la v13 la app baja la versión nueva al abrirla con internet y **se recarga sola** para mostrarla (`controllerchange` en `index.html`). `sw.js` instala con `cache: "reload"` y busca actualizaciones con `no-cache`, porque GitHub Pages cachea 10 minutos y antes podía quedar guardada la versión vieja.
+
+## Guardia
+
+`.claude/hooks/guardia.py` corre solo (hook en `.claude/settings.json`) antes de cada `git commit`/`git push` de Claude: frena si hay claves, `.env` o `.json` de datos, si cambió `index.html` sin subir `VERSION` en `sw.js`, si `APP_VERSION` ≠ `VERSION`, o si el JavaScript tiene errores de sintaxis. Falso positivo: `guardia:ok` en esa línea. Es copia del de `Personal` (mismo archivo en todas las apps).
