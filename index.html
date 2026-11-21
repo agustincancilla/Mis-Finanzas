@@ -402,7 +402,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v23"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v24"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -585,6 +585,8 @@ details[open] summary { margin-bottom: 4px; }
     return emptyStore();
   }
   let store = loadStore();
+  if (aplicarAutomaticos()) persist();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && aplicarAutomaticos()) { persist(); renderAll(); } });
   function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (_) {} }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (_) {}
 
@@ -1543,21 +1545,43 @@ details[open] summary { margin-bottom: 4px; }
   /* Cada semana: el fondo del auto (plan de mantenimiento pasado a semanas) + lo que se ahorra, que llena las metas en orden. */
   const juntado = (a) => a.movs.reduce((t, m) => t + (m.monto || 0), 0);
   const lunes = () => addDays(today(), -((parseIso(today()).getDay() + 6) % 7));
+  /* Ahorro automático (por ejemplo, una reserva de Mercado Pago): cada semana, el día elegido, se anota solo. */
+  const diaAuto = (a) => addDays(lunes(), (Number(a.autoDia ?? 1) + 6) % 7);
+  function aplicarAutomaticos() {
+    let cambio = false; const hoy = today();
+    for (const a of store.ahorros) {
+      if (!(a.autoMonto > 0) || !a.autoDesde) continue;
+      let d = a.autoDesde, n = 0;
+      while (d <= hoy && n++ < 800) {
+        if (parseIso(d).getDay() === Number(a.autoDia ?? 1) && !a.movs.some((m) => m.auto && m.fecha === d)) { a.movs.push({ id: newId(), fecha: d, monto: a.autoMonto, auto: true }); cambio = true; }
+        d = addDays(d, 1);
+      }
+    }
+    return cambio;
+  }
   function planSemana() {
     const desde = lunes();
-    const pedido = new Map();
-    const auto = store.ahorros.find((a) => a.auto);
-    if (auto) pedido.set(auto.id, Math.round(planMant().total * 12 / 52));
+    const hecho = (a) => a.movs.filter((m) => m.fecha >= desde && m.monto > 0).reduce((t, m) => t + m.monto, 0);
+    const filas = [];
     let resto = store.ahorroConf.porSemana || 0;
     for (const a of store.ahorros) {
-      if (a.auto || resto <= 0) continue;
-      const falta = a.objetivo ? Math.max(0, a.objetivo - juntado(a)) : Infinity;
-      if (!falta) continue;
-      const toma = Math.min(resto, falta); pedido.set(a.id, toma); resto -= toma;
+      const falta = a.objetivo ? Math.max(0, a.objetivo - juntado(a) + hecho(a)) : Infinity;
+      if (a.autoMonto > 0 && a.autoDesde) {
+        const dia = diaAuto(a);
+        if (dia < a.autoDesde) { filas.push({ a, pide: 0, hecho: 0, automatico: true, nota: `Se aparta solo desde el ${DIAS[parseIso(a.autoDesde).getDay()]} ${fmtD(a.autoDesde)}` }); continue; }
+        const pide = Math.min(a.autoMonto, falta); if (!pide) continue;
+        if (!a.auto) resto = Math.max(0, resto - pide);
+        filas.push({ a, pide, hecho: Math.min(pide, hecho(a)), automatico: true, nota: dia > today() ? `Se aparta solo el ${DIAS[parseIso(dia).getDay()]}` : "Se apartó solo" });
+      } else if (a.auto) {
+        filas.push({ a, pide: Math.round(planMant().total * 12 / 52), hecho: 0 });
+      } else if (resto > 0 && falta) {
+        const toma = Math.min(resto, falta); filas.push({ a, pide: toma, hecho: 0 }); resto -= toma;
+      }
     }
-    const hecho = (a) => a.movs.filter((m) => m.fecha >= desde && m.monto > 0).reduce((t, m) => t + m.monto, 0);
-    const filas = store.ahorros.filter((a) => pedido.has(a.id)).map((a) => ({ a, pide: pedido.get(a.id), hecho: Math.min(pedido.get(a.id), hecho(a)) }));
-    return { filas, total: filas.reduce((t, f) => t + f.pide, 0), hecho: filas.reduce((t, f) => t + f.hecho, 0) };
+    filas.forEach((f) => { if (!f.automatico) f.hecho = Math.min(f.pide, hecho(f.a)); });
+    const manual = filas.filter((f) => !f.automatico);
+    return { filas, total: filas.reduce((t, f) => t + f.pide, 0), hecho: filas.reduce((t, f) => t + f.hecho, 0),
+      faltaManual: manual.reduce((t, f) => t + Math.max(0, f.pide - f.hecho), 0) };
   }
   function renderAhorro() {
     const box = $("#list-ahorros");
@@ -1567,11 +1591,11 @@ details[open] summary { margin-bottom: 4px; }
     let html = `<div class="card plata">
       <div class="tiny muted" style="letter-spacing:.1em;text-transform:uppercase">Esta semana apartá</div>
       <div class="big">${money(ps.total)}</div>
-      <div class="rows">${ps.filas.map((f) => `<div class="row no-check"><span><span class="name">${esc(f.a.nombre)}</span>${f.hecho >= f.pide ? `<br><span class="meta">Ya apartado</span>` : ""}</span><span class="amt">${money(f.pide)}</span></div>`).join("")}</div>
+      <div class="rows">${ps.filas.map((f) => `<div class="row no-check"><span><span class="name">${esc(f.a.nombre)}</span>${f.nota ? `<br><span class="meta">${esc(f.nota)}</span>` : f.hecho >= f.pide ? `<br><span class="meta">Ya apartado</span>` : ""}</span><span class="amt">${money(f.pide)}</span></div>`).join("")}</div>
       ${ps.total ? `<div class="small">Apartaste <b class="num">${money(ps.hecho)}</b> de <b class="num">${money(ps.total)}</b> esta semana.</div>
       <div class="bar ${listo ? "" : "warn"}" aria-hidden="true"><i style="width:${Math.min(100, Math.round(ps.hecho / ps.total * 100))}%"></i></div>` : ""}
-      ${listo ? `<span class="pill ok">¡Listo esta semana!</span>` : ps.total ? `<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-ahorro-semana>Ya lo aparté</button></div>` : ""}
-      <div class="small muted">Apartalo apenas cobrás, en una cuenta que rinda (Naranja X o Mercado Pago), y no lo toques. Para el ahorro usás ${money(store.ahorroConf.porSemana)} por semana (unos ${money(store.ahorroConf.porSemana * 52 / 12)} por mes); el fondo del auto sale del plan de mantenimiento.</div>
+      ${listo ? `<span class="pill ok">¡Listo esta semana!</span>` : ps.faltaManual ? `<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-ahorro-semana>Ya lo aparté</button></div>` : ""}
+      <div class="small muted">Apartalo apenas cobrás, en una cuenta que rinda (Naranja X o Mercado Pago), y no lo toques. Para el ahorro usás ${money(store.ahorroConf.porSemana)} por semana (unos ${money(store.ahorroConf.porSemana * 52 / 12)} por mes); el fondo del auto sale del plan de mantenimiento. Lo automático (por ejemplo, una reserva de Mercado Pago) se anota solo: lo configurás con “Editar” en cada meta.</div>
     </div>`;
     let ahora = false;
     html += `<div class="list">${store.ahorros.map((a, i) => {
@@ -1586,10 +1610,11 @@ details[open] summary { margin-bottom: 4px; }
         <div class="card-row"><h3>${a.auto ? "" : `${store.ahorros.filter((x, k) => !x.auto && k <= i).length}. `}${esc(a.nombre)}</h3>${pill}</div>
         <div class="big">${money(j)}</div>
         ${a.objetivo ? `<div class="kv"><span>Meta <b>${money(a.objetivo)}</b></span><span>Falta <b>${money(Math.max(0, a.objetivo - j))}</b></span></div>
-          <div class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Math.round(j / a.objetivo * 100)))}%"></i></div>` : a.auto ? `<div class="kv"><span>Por semana <b>${money(planMant().total * 12 / 52)}</b></span></div>` : ""}
+          <div class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Math.round(j / a.objetivo * 100)))}%"></i></div>` : a.auto ? `<div class="kv"><span>Por semana <b>${money(a.autoMonto > 0 ? a.autoMonto : planMant().total * 12 / 52)}</b></span>${a.autoMonto > 0 ? `<span>El plan pide <b>${money(planMant().total * 12 / 52)}</b></span>` : ""}</div>` : ""}
+        ${a.autoMonto > 0 && a.autoDesde ? `<div class="small"><span class="pill ok">Automático</span> ${money(a.autoMonto)} todos los ${DIAS[Number(a.autoDia ?? 1)]}${a.autoDesde > today() ? `, desde el ${fmtD(a.autoDesde)}` : ""}</div>` : ""}
         ${a.nota ? `<div class="small muted">${esc(a.nota)}</div>` : ""}
         ${a.movs.length ? `<details><summary>Ver movimientos</summary><div class="rows">${a.movs.slice().sort((x, y) => y.fecha.localeCompare(x.fecha)).map((m) => `
-          <div class="row no-check"><span class="num">${fmtDL(m.fecha)}${m.monto < 0 ? " · usé" : ""}</span><span class="amt">${m.monto < 0 ? "−" : "+"}${money(Math.abs(m.monto))}</span></div>`).join("")}</div></details>` : ""}
+          <div class="row no-check"><span class="num">${fmtDL(m.fecha)}${m.monto < 0 ? " · usé" : m.auto ? " · automático" : ""}</span><span class="amt">${m.monto < 0 ? "−" : "+"}${money(Math.abs(m.monto))}</span></div>`).join("")}</div></details>` : ""}
         ${abierto ? `<form class="inline-form" data-ahorro-mov="${esc(a.id)}" data-signo="${signo}">
           <label for="${esc(fid)}" class="small">${signo === "+" ? "¿Cuánto apartaste?" : "¿Cuánto usaste?"}</label>
           <input id="${esc(fid)}" type="text" inputmode="numeric" data-num>
@@ -1609,7 +1634,7 @@ details[open] summary { margin-bottom: 4px; }
     if (c) { const id = "ah-" + c.dataset.ahorroCerrar; openForms.delete(id + "-p"); openForms.delete(id + "-m"); renderAhorro(); return; }
     if (e.target.closest("[data-ahorro-semana]")) {
       const ps = planSemana();
-      save(() => { ps.filas.forEach((f) => { if (f.pide > f.hecho) f.a.movs.push({ id: newId(), fecha: today(), monto: f.pide - f.hecho }); }); }, `Apartaste ${money(ps.total - ps.hecho)}. ¡Bien!`);
+      save(() => { ps.filas.forEach((f) => { if (!f.automatico && f.pide > f.hecho) f.a.movs.push({ id: newId(), fecha: today(), monto: f.pide - f.hecho }); }); }, `Apartaste ${money(ps.faltaManual)}. ¡Bien!`);
     }
   });
   $("#list-ahorros").addEventListener("submit", (e) => {
@@ -1882,6 +1907,9 @@ details[open] summary { margin-bottom: 4px; }
     ahorros: { title: "meta de ahorro", fields: [
       { k: "nombre", l: "Para qué", t: "text", req: true },
       { k: "objetivo", l: "Meta (cuánto querés juntar)", t: "money", hint: "Dejalo vacío si no tiene tope (por ejemplo, inversiones)." },
+      { k: "autoMonto", l: "Se aparta solo cada semana", t: "money", hint: "Si tenés una reserva automática (por ejemplo, en Mercado Pago). Dejalo vacío si lo apartás a mano." },
+      { k: "autoDia", l: "Qué día se aparta", t: "select", opts: [1, 2, 3, 4, 5, 6, 0].map((n) => [String(n), cap(DIAS[n])]) },
+      { k: "autoDesde", l: "Desde cuándo", t: "date", hint: "El primer día que se aparta solo." },
       { k: "nota", l: "Nota", t: "area" },
     ]},
     deudas: { title: "deuda", fields: [
@@ -1891,7 +1919,7 @@ details[open] summary { margin-bottom: 4px; }
       { k: "nota", l: "Nota", t: "area" },
     ]},
   };
-  const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }), ahorros: () => ({}) };
+  const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }), ahorros: () => ({ autoDia: "1" }) };
 
   function closeSheet() { $("#sheet-root").innerHTML = ""; }
   function mountSheet(html) {
