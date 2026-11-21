@@ -304,6 +304,7 @@ details[open] summary { margin-bottom: 4px; }
         <button class="subtab" type="button" role="tab" data-subtab="fijos" aria-selected="false">Fijos</button>
         <button class="subtab" type="button" role="tab" data-subtab="cats" aria-selected="false">En qué se fue</button>
         <button class="subtab" type="button" role="tab" data-subtab="sale" aria-selected="false">Sale este mes</button>
+        <button class="subtab" type="button" role="tab" data-subtab="ahorro" aria-selected="false">Ahorro</button>
       </div>
 
       <div class="panel" data-subpanel="resumen">
@@ -346,6 +347,17 @@ details[open] summary { margin-bottom: 4px; }
       <div class="panel" data-subpanel="sale" hidden>
         <div class="panel-head"><h2>Plata que sale este mes</h2></div>
         <div id="caja"></div>
+      </div>
+
+      <div class="panel" data-subpanel="ahorro" hidden>
+        <div class="panel-head">
+          <h2>Plan de ahorro</h2>
+          <div class="actions">
+            <button class="btn btn-sm" type="button" data-ahorro-conf>Cuánto por semana</button>
+            <button class="btn btn-sm" type="button" data-add="ahorros">+ Meta</button>
+          </div>
+        </div>
+        <div id="list-ahorros" class="panel"></div>
       </div>
     </section>
 
@@ -390,7 +402,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v21"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v22"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -473,7 +485,7 @@ details[open] summary { margin-bottom: 4px; }
   function emptyStore() {
     return {
       ingreso: { frecuencia: "semanal", monto: 0, dia: 6 }, medioDefault: "efectivo", reglas: REGLAS_INICIALES.map((r) => ({ ...r, id: newId() })),
-      mant: MANT_INICIAL.map((r) => ({ ...r, id: newId() })), mantConf: { kmPorMes: 4000, colchon: 10 }, fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [],
+      mant: MANT_INICIAL.map((r) => ({ ...r, id: newId() })), mantConf: { kmPorMes: 4000, colchon: 10 }, fijos: [], gastos: [], ingresos: [], compras: [], inversiones: [], deudas: [], fotosInv: [], ahorros: [], ahorroConf: { porSemana: 0 },
       tarjetas: JSON.parse(JSON.stringify(TARJETAS_INICIALES)), resumenes: {}, dolar: null,
       billeteras: [{ id: "nx", nombre: "Naranja X", saldo: null, tna: null, actualizado: null }, { id: "mpw", nombre: "Mercado Pago", saldo: null, tna: null, actualizado: null }],
     };
@@ -481,11 +493,13 @@ details[open] summary { margin-bottom: 4px; }
   function normalize(d) {
     if (!d || typeof d !== "object") throw new Error("formato");
     const out = emptyStore();
-    for (const c of ["fijos", "gastos", "ingresos", "compras", "inversiones", "deudas", "fotosInv"]) {
+    for (const c of ["fijos", "gastos", "ingresos", "compras", "inversiones", "deudas", "fotosInv", "ahorros"]) {
       if (d[c] != null && !Array.isArray(d[c])) throw new Error("formato");
       out[c] = (d[c] || []).filter((x) => x && typeof x === "object").map((x) => ({ ...x, id: String(x.id || newId()) }));
     }
     out.deudas.forEach((x) => { x.movs = Array.isArray(x.movs) ? x.movs : []; });
+    out.ahorros.forEach((x) => { x.movs = Array.isArray(x.movs) ? x.movs : []; });
+    if (d.ahorroConf && typeof d.ahorroConf === "object") out.ahorroConf = { porSemana: Number(d.ahorroConf.porSemana) || 0 };
     if (Array.isArray(d.tarjetas) && d.tarjetas.length) out.tarjetas = d.tarjetas;
     out.tarjetas.forEach((t) => { if (t.tipo === "variable" && !Array.isArray(t.cierres)) t.cierres = []; });
     if (d.resumenes && typeof d.resumenes === "object") out.resumenes = d.resumenes;
@@ -546,6 +560,20 @@ details[open] summary { margin-bottom: 4px; }
       /* VTV una vez por año: $120.000 (pagada en nov/2026). */
       if (!out.mant.some((x) => /vtv|verificaci/i.test(x.nombre || ""))) out.mant.push({ id: newId(), nombre: "VTV (verificación técnica)", costo: 120000, cadaMeses: 12, precio: "confirmado" });
       out.seedVersion = 12;
+    }
+    if (out.seedVersion < 13) {
+      /* Plan de ahorro: el fondo del auto sigue al plan de mantenimiento; lo demás llena las metas en orden: deudas, emergencia, inversiones. */
+      if (!out.ahorros.length) {
+        const debo = out.deudas.filter((x) => x.tipo === "debo").reduce((t, x) => t + Math.max(0, (x.monto || 0) - x.movs.reduce((a, m) => a + (m.monto || 0), 0)), 0);
+        out.ahorros = [
+          { id: newId(), nombre: "Fondo del auto", auto: true, movs: [], nota: "Para service y arreglos. Cuando pagues un arreglo con esta plata, tocá “Usé”." },
+          ...(debo ? [{ id: newId(), nombre: "Pagar deudas", objetivo: debo, movs: [], nota: "Lo que figura en la pestaña Deudas. Cuando pagues, anotalo también ahí." }] : []),
+          { id: newId(), nombre: "Fondo de emergencia", objetivo: 1600000, movs: [], nota: "Un mes de todos tus gastos, por si un mes no podés trabajar. No se toca para otra cosa." },
+          { id: newId(), nombre: "Inversiones", movs: [], nota: "Lo que sobra, una vez cumplidas las metas de arriba. Pasalo a eToro o Binance con el reparto 50/30/20." },
+        ];
+      }
+      if (!out.ahorroConf.porSemana) out.ahorroConf.porSemana = 100000;
+      out.seedVersion = 13;
     }
     return out;
   }
@@ -1511,6 +1539,95 @@ details[open] summary { margin-bottom: 4px; }
     save(() => { d.movs.push({ id: newId(), fecha: today(), monto: n }); }, `${d.persona}: quedan ${money(Math.max(0, resta(d) - n))}`);
   });
 
+  /* ---------- Render: plan de ahorro ---------- */
+  /* Cada semana: el fondo del auto (plan de mantenimiento pasado a semanas) + lo que se ahorra, que llena las metas en orden. */
+  const juntado = (a) => a.movs.reduce((t, m) => t + (m.monto || 0), 0);
+  const lunes = () => addDays(today(), -((parseIso(today()).getDay() + 6) % 7));
+  function planSemana() {
+    const desde = lunes();
+    const pedido = new Map();
+    const auto = store.ahorros.find((a) => a.auto);
+    if (auto) pedido.set(auto.id, Math.round(planMant().total * 12 / 52));
+    let resto = store.ahorroConf.porSemana || 0;
+    for (const a of store.ahorros) {
+      if (a.auto || resto <= 0) continue;
+      const falta = a.objetivo ? Math.max(0, a.objetivo - juntado(a)) : Infinity;
+      if (!falta) continue;
+      const toma = Math.min(resto, falta); pedido.set(a.id, toma); resto -= toma;
+    }
+    const hecho = (a) => a.movs.filter((m) => m.fecha >= desde && m.monto > 0).reduce((t, m) => t + m.monto, 0);
+    const filas = store.ahorros.filter((a) => pedido.has(a.id)).map((a) => ({ a, pide: pedido.get(a.id), hecho: Math.min(pedido.get(a.id), hecho(a)) }));
+    return { filas, total: filas.reduce((t, f) => t + f.pide, 0), hecho: filas.reduce((t, f) => t + f.hecho, 0) };
+  }
+  function renderAhorro() {
+    const box = $("#list-ahorros");
+    if (!store.ahorros.length) { box.innerHTML = `<div class="empty">No hay metas de ahorro. Tocá “+ Meta”.</div>`; return; }
+    const ps = planSemana();
+    const listo = ps.total > 0 && ps.hecho >= ps.total;
+    let html = `<div class="card plata">
+      <div class="tiny muted" style="letter-spacing:.1em;text-transform:uppercase">Esta semana apartá</div>
+      <div class="big">${money(ps.total)}</div>
+      <div class="rows">${ps.filas.map((f) => `<div class="row no-check"><span><span class="name">${esc(f.a.nombre)}</span>${f.hecho >= f.pide ? `<br><span class="meta">Ya apartado</span>` : ""}</span><span class="amt">${money(f.pide)}</span></div>`).join("")}</div>
+      ${ps.total ? `<div class="small">Apartaste <b class="num">${money(ps.hecho)}</b> de <b class="num">${money(ps.total)}</b> esta semana.</div>
+      <div class="bar ${listo ? "" : "warn"}" aria-hidden="true"><i style="width:${Math.min(100, Math.round(ps.hecho / ps.total * 100))}%"></i></div>` : ""}
+      ${listo ? `<span class="pill ok">¡Listo esta semana!</span>` : ps.total ? `<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-ahorro-semana>Ya lo aparté</button></div>` : ""}
+      <div class="small muted">Apartalo apenas cobrás, en una cuenta que rinda (Naranja X o Mercado Pago), y no lo toques. Para el ahorro usás ${money(store.ahorroConf.porSemana)} por semana (unos ${money(store.ahorroConf.porSemana * 52 / 12)} por mes); el fondo del auto sale del plan de mantenimiento.</div>
+    </div>`;
+    let ahora = false;
+    html += `<div class="list">${store.ahorros.map((a, i) => {
+      const j = juntado(a); const fid = "ah-" + a.id; const signo = openForms.has(fid + "-m") ? "-" : "+";
+      let pill;
+      if (a.auto) pill = `<span class="pill neutral">Todas las semanas</span>`;
+      else if (a.objetivo && j >= a.objetivo) pill = `<span class="pill ok">¡Cumplida!</span>`;
+      else if (!ahora) { ahora = true; pill = `<span class="pill warn">Ahora toca esta</span>`; }
+      else pill = `<span class="pill neutral">Después</span>`;
+      const abierto = openForms.has(fid + "-p") || openForms.has(fid + "-m");
+      return `<article class="card">
+        <div class="card-row"><h3>${a.auto ? "" : `${store.ahorros.filter((x, k) => !x.auto && k <= i).length}. `}${esc(a.nombre)}</h3>${pill}</div>
+        <div class="big">${money(j)}</div>
+        ${a.objetivo ? `<div class="kv"><span>Meta <b>${money(a.objetivo)}</b></span><span>Falta <b>${money(Math.max(0, a.objetivo - j))}</b></span></div>
+          <div class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Math.round(j / a.objetivo * 100)))}%"></i></div>` : a.auto ? `<div class="kv"><span>Por semana <b>${money(planMant().total * 12 / 52)}</b></span></div>` : ""}
+        ${a.nota ? `<div class="small muted">${esc(a.nota)}</div>` : ""}
+        ${a.movs.length ? `<details><summary>Ver movimientos</summary><div class="rows">${a.movs.slice().sort((x, y) => y.fecha.localeCompare(x.fecha)).map((m) => `
+          <div class="row no-check"><span class="num">${fmtDL(m.fecha)}${m.monto < 0 ? " · usé" : ""}</span><span class="amt">${m.monto < 0 ? "−" : "+"}${money(Math.abs(m.monto))}</span></div>`).join("")}</div></details>` : ""}
+        ${abierto ? `<form class="inline-form" data-ahorro-mov="${esc(a.id)}" data-signo="${signo}">
+          <label for="${esc(fid)}" class="small">${signo === "+" ? "¿Cuánto apartaste?" : "¿Cuánto usaste?"}</label>
+          <input id="${esc(fid)}" type="text" inputmode="numeric" data-num>
+          <button class="btn btn-primary btn-sm" type="submit">Guardar</button>
+          <button class="btn btn-sm" type="button" data-ahorro-cerrar="${esc(a.id)}">Cancelar</button></form>`
+        : `<div class="actions"><button class="btn btn-primary btn-sm" type="button" data-ahorro-abrir="${esc(a.id)}" data-signo="p">+ Aparté</button>
+          ${j > 0 ? `<button class="btn btn-sm" type="button" data-ahorro-abrir="${esc(a.id)}" data-signo="m">Usé</button>` : ""}
+          <button class="btn btn-sm" type="button" data-edit="ahorros" data-id="${esc(a.id)}">Editar</button></div>`}
+      </article>`;
+    }).join("")}</div>`;
+    box.innerHTML = html;
+  }
+  $("#list-ahorros").addEventListener("click", (e) => {
+    const o = e.target.closest("[data-ahorro-abrir]");
+    if (o) { const id = "ah-" + o.dataset.ahorroAbrir; openForms.add(id + "-" + o.dataset.signo); renderAhorro(); const i = document.getElementById(id); if (i) i.focus(); return; }
+    const c = e.target.closest("[data-ahorro-cerrar]");
+    if (c) { const id = "ah-" + c.dataset.ahorroCerrar; openForms.delete(id + "-p"); openForms.delete(id + "-m"); renderAhorro(); return; }
+    if (e.target.closest("[data-ahorro-semana]")) {
+      const ps = planSemana();
+      save(() => { ps.filas.forEach((f) => { if (f.pide > f.hecho) f.a.movs.push({ id: newId(), fecha: today(), monto: f.pide - f.hecho }); }); }, `Apartaste ${money(ps.total - ps.hecho)}. ¡Bien!`);
+    }
+  });
+  $("#list-ahorros").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target.closest("[data-ahorro-mov]"); if (!f) return;
+    const a = store.ahorros.find((x) => x.id === f.dataset.ahorroMov); if (!a) return;
+    const n = parseInt0(f.querySelector("input").value);
+    if (!n) { toast("Escribí el monto."); return; }
+    const menos = f.dataset.signo === "-";
+    openForms.delete("ah-" + a.id + "-p"); openForms.delete("ah-" + a.id + "-m");
+    save(() => { a.movs.push({ id: newId(), fecha: today(), monto: menos ? -n : n }); }, `${a.nombre}: ${money(juntado(a) + (menos ? -n : n))} juntado`);
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-ahorro-conf]")) return;
+    openSimple({ title: "Cuánto ahorrar por semana", label: "Sin contar el fondo del auto", value: store.ahorroConf.porSemana,
+      onSave: (n) => save(() => { store.ahorroConf.porSemana = n; }, `Ahorrás ${money(n)} por semana`) });
+  });
+
   /* ---------- Línea rápida: entender lo que escribís o dictás ---------- */
   const ACC = { "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u", "ñ": "n" };
   const fold = (s) => s.toLowerCase().replace(/[áéíóúüñ]/g, (c) => ACC[c]);
@@ -1708,7 +1825,7 @@ details[open] summary { margin-bottom: 4px; }
       ? "Todavía no hiciste ninguna copia de seguridad. Si se borra la app o cambiás de celu, se pierden los datos."
       : `Tu última copia de seguridad es de hace ${days} días.`;
   }
-  function renderAll() { renderHeader(); renderMes(); renderTarjetas(); renderCompras(); renderInv(); renderAuto(); renderDeudas(); renderBanners(); }
+  function renderAll() { renderHeader(); renderMes(); renderTarjetas(); renderCompras(); renderInv(); renderAuto(); renderDeudas(); renderAhorro(); renderBanners(); }
 
   /* ---------- Hojas: agregar / editar / borrar ---------- */
   const SCHEMAS = {
@@ -1762,6 +1879,11 @@ details[open] summary { margin-bottom: 4px; }
       { k: "moneda", l: "Moneda", t: "select", opts: [["USD", "Dólares"], ["ARS", "Pesos"]] },
       { k: "nota", l: "Nota", t: "text", hint: "Ej: BTC, staking, copy trading" },
     ]},
+    ahorros: { title: "meta de ahorro", fields: [
+      { k: "nombre", l: "Para qué", t: "text", req: true },
+      { k: "objetivo", l: "Meta (cuánto querés juntar)", t: "money", hint: "Dejalo vacío si no tiene tope (por ejemplo, inversiones)." },
+      { k: "nota", l: "Nota", t: "area" },
+    ]},
     deudas: { title: "deuda", fields: [
       { k: "persona", l: "Con quién o qué", t: "text", req: true },
       { k: "tipo", l: "Tipo", t: "select", opts: [["debo", "Le debo"], ["medeben", "Me debe"]] },
@@ -1769,7 +1891,7 @@ details[open] summary { margin-bottom: 4px; }
       { k: "nota", l: "Nota", t: "area" },
     ]},
   };
-  const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }) };
+  const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }), ahorros: () => ({}) };
 
   function closeSheet() { $("#sheet-root").innerHTML = ""; }
   function mountSheet(html) {
@@ -1842,9 +1964,9 @@ details[open] summary { margin-bottom: 4px; }
           if (col === "fijos" && data.monto !== item.monto) setMontoFijo(item, data.monto);
           if (col === "compras" && data.precio !== item.precio) setPrecio(item, data.precio);
           const keep = {};
-          ["montoAnterior", "fechaMonto", "precioAnterior", "fechaPrecio", "movs", "fijoId"].forEach((k) => { if (item[k] != null) keep[k] = item[k]; });
+          ["montoAnterior", "fechaMonto", "precioAnterior", "fechaPrecio", "movs", "fijoId", "auto"].forEach((k) => { if (item[k] != null) keep[k] = item[k]; });
           store[col] = store[col].map((x) => (x.id === id ? { id, ...keep, ...data } : x));
-        } else store[col].push({ id: newId(), ...(col === "deudas" ? { movs: [] } : {}), ...data });
+        } else store[col].push({ id: newId(), ...(col === "deudas" || col === "ahorros" ? { movs: [] } : {}), ...data });
       });
       if (ok) closeSheet();
     });
