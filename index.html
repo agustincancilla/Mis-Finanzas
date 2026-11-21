@@ -300,11 +300,11 @@ details[open] summary { margin-bottom: 4px; }
       </div>
       <div class="subtabs" role="tablist" aria-label="Partes del mes">
         <button class="subtab" type="button" role="tab" data-subtab="resumen" aria-selected="true">Resumen</button>
+        <button class="subtab" type="button" role="tab" data-subtab="ahorro" aria-selected="false">Ahorro</button>
         <button class="subtab" type="button" role="tab" data-subtab="dia" aria-selected="false">Día a día</button>
         <button class="subtab" type="button" role="tab" data-subtab="fijos" aria-selected="false">Fijos</button>
         <button class="subtab" type="button" role="tab" data-subtab="cats" aria-selected="false">En qué se fue</button>
         <button class="subtab" type="button" role="tab" data-subtab="sale" aria-selected="false">Sale este mes</button>
-        <button class="subtab" type="button" role="tab" data-subtab="ahorro" aria-selected="false">Ahorro</button>
       </div>
 
       <div class="panel" data-subpanel="resumen">
@@ -402,7 +402,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v22"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v23"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
