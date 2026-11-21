@@ -402,7 +402,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v24"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v25"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -575,6 +575,15 @@ details[open] summary { margin-bottom: 4px; }
       if (!out.ahorroConf.porSemana) out.ahorroConf.porSemana = 100000;
       out.seedVersion = 13;
     }
+    if (out.seedVersion < 14) {
+      /* Fijos con débito automático (lo dice la nota): se tildan solos el día del mes del último débito real (el que vino del resumen de la tarjeta). */
+      out.fijos.forEach((f) => {
+        if (f.tipo !== "pago" || f.debitoDia || !/d[eé]bito autom/i.test(f.nota || "")) return;
+        const ult = out.gastos.filter((g) => g.fijoId === f.id && (g.ref || g.fuente)).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+        if (ult) Object.assign(f, { debitoDia: Number(ult.fecha.slice(8)), debitoDesde: mk(today()) });
+      });
+      out.seedVersion = 14;
+    }
     return out;
   }
   function loadStore() {
@@ -584,9 +593,26 @@ details[open] summary { margin-bottom: 4px; }
     } catch (_) {}
     return emptyStore();
   }
+  /* Fijos con débito automático: el día del mes que se cobran, se marcan pagados solos (una vez por mes; si lo destildás, no vuelve). */
+  function aplicarDebitos() {
+    let cambio = false; const hoy = today();
+    for (const f of store.fijos) {
+      if (f.tipo !== "pago" || !(f.debitoDia > 0) || !f.debitoDesde) continue;
+      f.debitoListo = Array.isArray(f.debitoListo) ? f.debitoListo : [];
+      for (let m = f.debitoDesde, n = 0; m <= mk(hoy) && n < 60; m = shiftMonth(m, 1), n++) {
+        const [y, mm] = m.split("-").map(Number); const fecha = ymd(y, mm, f.debitoDia);
+        if (fecha > hoy || f.debitoListo.includes(m)) continue;
+        if (!store.gastos.some((g) => g.fijoId === f.id && mk(g.fecha) === m))
+          store.gastos.push({ id: newId(), fecha, desc: f.nombre, monto: f.monto || 0, cat: f.cat, medio: f.medio || "efectivo", cuotas: 1, fijoId: f.id, debito: true });
+        f.debitoListo.push(m); cambio = true;
+      }
+    }
+    return cambio;
+  }
+  const automaticos = () => { const a = aplicarAutomaticos(); const b = aplicarDebitos(); return a || b; };
   let store = loadStore();
-  if (aplicarAutomaticos()) persist();
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && aplicarAutomaticos()) { persist(); renderAll(); } });
+  if (automaticos()) persist();
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && automaticos()) { persist(); renderAll(); } });
   function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (_) {} }
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (_) {}
 
@@ -758,7 +784,7 @@ details[open] summary { margin-bottom: 4px; }
         return `<div class="row ${p ? "paid" : ""}">
           <input type="checkbox" aria-label="Pagado: ${esc(f.nombre)}" data-pay="${esc(f.id)}" ${p ? "checked" : ""}>
           <button class="row-btn" type="button" data-edit="fijos" data-id="${esc(f.id)}">
-            <span><span class="name">${esc(f.nombre)}</span><br><span class="meta">${esc(MEDIOS[f.medio] || "")}${f.nota ? " · " + esc(f.nota) : ""}${f.montoAnterior != null ? ` · antes ${money(f.montoAnterior)}` : ""}</span></span>
+            <span><span class="name">${esc(f.nombre)}</span><br><span class="meta">${esc(MEDIOS[f.medio] || "")}${f.debitoDia > 0 ? ` · se debita solo el día ${f.debitoDia}` : f.nota ? " · " + esc(f.nota) : ""}${f.montoAnterior != null ? ` · antes ${money(f.montoAnterior)}` : ""}</span></span>
             <span class="amt">${money(p ? p.monto : f.monto)}</span>
           </button>
         </div>`;
@@ -1878,6 +1904,7 @@ details[open] summary { margin-bottom: 4px; }
       { k: "medio", l: "Con qué lo pagás", t: "select", opts: MEDIO_OPTS },
       { k: "cat", l: "Categoría", t: "select", opts: CATS.map((c) => [c, c]), hint: "En los topes, se suman los gastos de esta categoría." },
       { k: "alias", l: "Otras formas de nombrarlo", t: "text", hint: "Separadas por coma, para la línea rápida. Ej: gimnasio" },
+      { k: "debitoDia", l: "Débito automático: día del mes", t: "money", hint: "Si se cobra solo (por ejemplo, de la tarjeta), el día que se debita: ese día se marca pagado solo. Vacío si lo pagás a mano." },
       { k: "nota", l: "Nota", t: "text" },
     ]},
     gastos: { title: "gasto", fields: [
@@ -1990,11 +2017,13 @@ details[open] summary { margin-bottom: 4px; }
       const ok = save(() => {
         if (item) {
           if (col === "fijos" && data.monto !== item.monto) setMontoFijo(item, data.monto);
+          if (col === "fijos" && data.debitoDia && data.debitoDia !== item.debitoDia) { data.debitoDesde = mk(today()); data.debitoListo = []; }
           if (col === "compras" && data.precio !== item.precio) setPrecio(item, data.precio);
           const keep = {};
-          ["montoAnterior", "fechaMonto", "precioAnterior", "fechaPrecio", "movs", "fijoId", "auto"].forEach((k) => { if (item[k] != null) keep[k] = item[k]; });
+          ["montoAnterior", "fechaMonto", "precioAnterior", "fechaPrecio", "movs", "fijoId", "auto", "debitoDesde", "debitoListo"].forEach((k) => { if (item[k] != null) keep[k] = item[k]; });
           store[col] = store[col].map((x) => (x.id === id ? { id, ...keep, ...data } : x));
-        } else store[col].push({ id: newId(), ...(col === "deudas" || col === "ahorros" ? { movs: [] } : {}), ...data });
+        } else store[col].push({ id: newId(), ...(col === "deudas" || col === "ahorros" ? { movs: [] } : {}), ...(col === "fijos" && data.debitoDia ? { debitoDesde: mk(today()) } : {}), ...data });
+        if (col === "fijos") aplicarDebitos();
       });
       if (ok) closeSheet();
     });
@@ -2094,6 +2123,7 @@ details[open] summary { margin-bottom: 4px; }
       for (const g of nuevos) {
         const { fijo, ...resto } = g;
         const f = fijo ? store.fijos.find((x) => x.tipo === "pago" && new RegExp(fijo, "i").test(x.nombre || "")) : null;
+        if (f) store.gastos = store.gastos.filter((x) => !(x.fijoId === f.id && !x.ref && mk(x.fecha) === mk(g.fecha)));
         store.gastos.push({ id: newId(), cuotas: 1, cat: "Otros", medio: "efectivo", ...resto, ...(f ? { fijoId: f.id } : {}) });
       }
       for (const [k, v] of Object.entries(m.resumenes || {})) store.resumenes[k] = { ...(store.resumenes[k] || {}), ...(v || {}) };
