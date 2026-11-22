@@ -400,7 +400,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v26"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v27"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -666,7 +666,21 @@ details[open] summary { margin-bottom: 4px; }
 
   /* ---------- Cálculos del mes ---------- */
   let curMonth = mk(today());
-  const gastosMes = (m) => store.gastos.filter((g) => !g.previo && mk(g.fecha) === m);
+  /* Gastos que cuentan en el mes m. Lo comprado en cuotas cuenta una cuota por mes (la 1.ª en el mes de la compra, la 2.ª el mes siguiente…),
+     el mismo día del mes; cada cuota va como copia con el monto de la cuota y `cuotaN` (mismo id, para poder editar la compra). */
+  function gastosMes(m) {
+    const out = [];
+    for (const g of store.gastos) {
+      if (g.previo) continue;
+      const n = Math.max(1, Number(g.cuotas) || 1);
+      if (n === 1) { if (mk(g.fecha) === m) out.push(g); continue; }
+      const [y0, m0] = mk(g.fecha).split("-").map(Number), [y1, m1] = m.split("-").map(Number);
+      const k = (y1 - y0) * 12 + (m1 - m0);
+      if (k < 0 || k >= n) continue;
+      out.push({ ...g, monto: g.monto / n, montoTotal: g.monto, cuotaN: k + 1, fecha: k ? ymd(y1, m1, Number(g.fecha.slice(8))) : g.fecha });
+    }
+    return out;
+  }
   const fijoPago = (f, m) => store.gastos.find((g) => g.fijoId === f.id && mk(g.fecha) === m);
   const topeCats = () => new Set(store.fijos.filter((f) => f.tipo === "tope").map((f) => f.cat));
   function gastadoCat(cat, m) { return gastosMes(m).filter((g) => !g.fijoId && g.cat === cat).reduce((s, g) => s + g.monto, 0); }
@@ -836,7 +850,7 @@ details[open] summary { margin-bottom: 4px; }
         const g = m.g;
         return `
           <div class="row no-check"><button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
-            <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${g.fijoId ? "Gasto fijo · " : ""}${esc(g.cat || "Otros")} · ${esc(MEDIOS[g.medio] || "")}${g.cuotas > 1 ? ` · ${g.cuotas} cuotas de ${money(g.monto / g.cuotas)}` : ""}</span></span>
+            <span><span class="name">${esc(g.desc)}${g.cuotaN ? ` (cuota ${g.cuotaN} de ${g.cuotas})` : ""}</span><br><span class="meta">${g.fijoId ? "Gasto fijo · " : ""}${esc(g.cat || "Otros")} · ${esc(MEDIOS[g.medio] || "")}${g.cuotaN ? ` · total ${money(g.montoTotal)}` : ""}</span></span>
             <span class="amt">−${money(g.monto)}</span></button></div>`;
       };
       $("#list-gastos").innerHTML = `<div class="rows">${days.map((d) => {
@@ -1518,14 +1532,14 @@ details[open] summary { margin-bottom: 4px; }
         .map(([c, n]) => { const v = sum(deCat(c, l)); return v ? `${n} ${money(v)}` : ""; }).filter(Boolean).join(" · ");
       return `<div class="row no-check"><span><span class="name">${esc(cap(mesLabel(m)))}</span><br><span class="meta">${parts || "Nada anotado"}</span></span><span class="amt">${money(sum(l))}</span></div>`;
     }).join("")}</div></div>`;
-    const mant = store.gastos.filter((g) => !g.previo && g.cat === "Mantenimiento del auto" && (verServiceTodo || mk(g.fecha) === curMonth)).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const mant = (verServiceTodo ? store.gastos.filter((g) => !g.previo) : gastosMes(curMonth)).filter((g) => g.cat === "Mantenimiento del auto").sort((a, b) => b.fecha.localeCompare(a.fecha));
     html += `<div class="panel" style="gap:8px" id="auto-service">
       <h3 class="group-title">Service y repuestos${verServiceTodo ? "" : ` de ${esc(mesLabel(curMonth).split(" ")[0])}`}</h3>
       <div class="actions"><button class="btn btn-sm" type="button" data-add="gastos" data-cat="Mantenimiento del auto">+ Service o repuesto</button>
         <button class="btn btn-sm" type="button" data-add="gastos" data-cat="GNC" data-medio="${esc(medioPorRegla("gnc") || store.medioDefault)}">+ Carga de GNC</button></div>
       ${mant.length ? `<div class="rows">${mant.slice(0, 15).map((g) => `
         <div class="row no-check"><button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
-          <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${fmtDL(g.fecha)} · ${esc(MEDIOS[g.medio] || "")}</span></span>
+          <span><span class="name">${esc(g.desc)}${g.cuotaN ? ` (cuota ${g.cuotaN} de ${g.cuotas})` : ""}</span><br><span class="meta">${fmtDL(g.fecha)} · ${esc(MEDIOS[g.medio] || "")}${g.cuotaN ? ` · total ${money(g.montoTotal)}` : g.cuotas > 1 ? ` · ${g.cuotas} cuotas de ${money(g.monto / g.cuotas)}` : ""}</span></span>
           <span class="amt">${money(g.monto)}</span></button></div>`).join("")}</div>` : `<div class="empty">${verServiceTodo ? "Todavía no hay services ni repuestos anotados." : `No anotaste services ni repuestos en ${esc(mesLabel(curMonth))}.`}</div>`}
       <button class="linkbtn" type="button" data-ver-service>${verServiceTodo ? "Ver solo los de este mes" : "Ver los de meses anteriores"}</button>
       <div class="small muted">Para saber cuándo toca cada cambio por kilómetros, usá la <a href="https://agustincancilla.github.io/libreta-voyage/" target="_blank" rel="noopener">Libreta del Voyage</a>.</div>
