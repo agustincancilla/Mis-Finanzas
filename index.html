@@ -100,6 +100,7 @@ a { color: var(--accent); }
 .subtab { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 7px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .subtab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .ver-mas { width: 100%; margin-top: 10px; }
+#auto-service { scroll-margin-top: 64px; }
 .in { color: var(--ok); }
 .row.neutral .amt, .row.neutral .name { color: var(--muted); }
 
@@ -300,11 +301,8 @@ details[open] summary { margin-bottom: 4px; }
       </div>
       <div class="subtabs" role="tablist" aria-label="Partes del mes">
         <button class="subtab" type="button" role="tab" data-subtab="resumen" aria-selected="true">Resumen</button>
-        <button class="subtab" type="button" role="tab" data-subtab="ahorro" aria-selected="false">Ahorro</button>
         <button class="subtab" type="button" role="tab" data-subtab="dia" aria-selected="false">Día a día</button>
         <button class="subtab" type="button" role="tab" data-subtab="fijos" aria-selected="false">Fijos</button>
-        <button class="subtab" type="button" role="tab" data-subtab="cats" aria-selected="false">En qué se fue</button>
-        <button class="subtab" type="button" role="tab" data-subtab="sale" aria-selected="false">Sale este mes</button>
       </div>
 
       <div class="panel" data-subpanel="resumen">
@@ -402,7 +400,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v25"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v26"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -816,9 +814,12 @@ details[open] summary { margin-bottom: 4px; }
     if (!movs.length) $("#list-gastos").innerHTML = `<div class="empty">No hay nada anotado en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil, súper 25000, gnc 7500”.</div>`;
     else {
       const todos = [...new Set(movs.map((m) => m.fecha))].sort().reverse();
-      const days = verTodoDia ? todos : todos.slice(0, 3);
-      const ocultos = movs.filter((m) => !days.includes(m.fecha)).length;
       const orden = { ingreso: 0, gasto: 1, tarjeta: 2 };
+      const enOrden = todos.flatMap((d) => movs.filter((m) => m.fecha === d).sort((a, b) => orden[a.tipo] - orden[b.tipo]));
+      const VER_DIA = 7;
+      const visibles = new Set(verTodoDia ? enOrden : enOrden.slice(0, VER_DIA));
+      const days = todos.filter((d) => enOrden.some((m) => m.fecha === d && visibles.has(m)));
+      const ocultos = enOrden.length - visibles.size;
       const fila = (m) => {
         if (m.tipo === "ingreso") return `
           <div class="row no-check"><button class="row-btn" type="button" data-edit="ingresos" data-id="${esc(m.x.id)}">
@@ -839,12 +840,13 @@ details[open] summary { margin-bottom: 4px; }
             <span class="amt">−${money(g.monto)}</span></button></div>`;
       };
       $("#list-gastos").innerHTML = `<div class="rows">${days.map((d) => {
-        const l = movs.filter((m) => m.fecha === d).sort((a, b) => orden[a.tipo] - orden[b.tipo]);
-        const entra = l.filter((m) => m.tipo === "ingreso").reduce((t, m) => t + m.x.monto, 0);
-        const sale = l.filter((m) => m.tipo === "gasto").reduce((t, m) => t + m.g.monto, 0);
+        const todosDia = movs.filter((m) => m.fecha === d);
+        const l = enOrden.filter((m) => m.fecha === d && visibles.has(m));
+        const entra = todosDia.filter((m) => m.tipo === "ingreso").reduce((t, m) => t + m.x.monto, 0);
+        const sale = todosDia.filter((m) => m.tipo === "gasto").reduce((t, m) => t + m.g.monto, 0);
         const tot = [entra ? `<span class="in">+${money(entra)}</span>` : "", sale ? `−${money(sale)}` : ""].filter(Boolean).join(" · ");
         return `<div class="day-title">${esc(diaLabel(d))}${tot ? " · " + tot : ""}</div>` + l.map(fila).join("");
-      }).join("")}</div>${todos.length > 3 ? `<button class="btn ver-mas" type="button" data-ver-dia>${verTodoDia ? "Ver menos" : `Ver más (${ocultos} ${ocultos === 1 ? "movimiento" : "movimientos"} de ${todos.length - 3} ${todos.length - 3 === 1 ? "día" : "días"} más)`}</button>` : ""}`;
+      }).join("")}</div>${enOrden.length > VER_DIA ? `<button class="btn ver-mas" type="button" data-ver-dia>${verTodoDia ? "Ver menos" : `Ver más (${ocultos} ${ocultos === 1 ? "movimiento" : "movimientos"} más)`}</button>` : ""}`;
     }
 
     const all = gastosMes(curMonth);
@@ -852,10 +854,7 @@ details[open] summary { margin-bottom: 4px; }
     all.forEach((g) => { const c = g.cat || "Otros"; byCat[c] = (byCat[c] || 0) + g.monto; });
     const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
     const max = cats.length ? cats[0][1] : 1;
-    $("#list-cats").innerHTML = !cats.length ? `<div class="empty">Cuando anotes gastos, acá ves en qué se fue la plata.</div>` : `
-      <div class="card cats">${cats.map(([c, v]) => `
-        <div class="cat"><span>${esc(c)}</span><b class="num">${money(v)}</b>
-          <div class="bar accent" aria-hidden="true"><i style="width:${Math.round(v / max * 100)}%"></i></div></div>`).join("")}</div>`;
+    $("#list-cats").innerHTML = catsHtml(cats, max);
 
     const cards = buildCards();
     const efectivo = all.filter((g) => g.medio === "efectivo").reduce((s, g) => s + g.monto, 0);
@@ -897,6 +896,20 @@ details[open] summary { margin-bottom: 4px; }
     };
   }
   let semanaVista = 0;
+  /* "En qué se fue": gastos del mes por categoría, de mayor a menor (va en Resumen, arriba de la Ganancia Neta). */
+  function catsHtml(cats, max) {
+    return !cats.length ? `<div class="empty">Cuando anotes gastos, acá ves en qué se fue la plata.</div>` : `
+      <div class="card cats">${cats.map(([c, v]) => `
+        <div class="cat"><span>${esc(c)}</span><b class="num">${money(v)}</b>
+          <div class="bar accent" aria-hidden="true"><i style="width:${Math.round(v / max * 100)}%"></i></div></div>`).join("")}</div>`;
+  }
+  function catsMes(m) {
+    const byCat = {};
+    gastosMes(m).forEach((g) => { const c = g.cat || "Otros"; byCat[c] = (byCat[c] || 0) + g.monto; });
+    const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    return catsHtml(cats, cats.length ? cats[0][1] : 1);
+  }
+  let verTodoGan = false;
   function renderGanancias() {
     const ing = store.ingreso;
     const box = $("#list-ingresos");
@@ -948,10 +961,11 @@ details[open] summary { margin-bottom: 4px; }
     const l = store.ingresos.filter((x) => mk(x.fecha) === curMonth).sort((a, b) => b.fecha.localeCompare(a.fecha));
     const porDia = ing.frecuencia === "diario" && ing.monto ? ing.monto / ing.dias.length : null;
     if (!l.length) html += `<div class="empty">Todavía no anotaste lo que ganaste en ${esc(mesLabel(curMonth))}. Escribilo arriba, por ejemplo: “hoy hice 95 mil”.</div>`;
-    else html += `<div class="rows">${l.map((x) => `
+    else html += `<div class="rows">${(verTodoGan ? l : l.slice(0, 5)).map((x) => `
       <div class="row no-check"><button class="row-btn" type="button" data-edit="ingresos" data-id="${esc(x.id)}">
         <span><span class="name">${esc(cap(diaLabel(x.fecha)))}</span><br><span class="meta">${porDia ? (x.monto >= porDia ? "Arriba del mínimo diario" : "Abajo del mínimo diario") : ""}${x.nota ? (porDia ? " · " : "") + esc(x.nota) : ""}</span></span>
-        <span class="amt">${money(x.monto)}</span></button></div>`).join("")}</div>`;
+        <span class="amt">${money(x.monto)}</span></button></div>`).join("")}</div>${l.length > 5 ? `<button class="btn ver-mas" type="button" data-ver-gan>${verTodoGan ? "Ver menos" : `Ver más (${l.length - 5} ${l.length - 5 === 1 ? "día" : "días"} más)`}</button>` : ""}`;
+    html += `<h3 class="group-title">En qué se fue</h3>${catsMes(curMonth)}`;
     if (n.cobras) html += `<div class="card">
         <div class="card-row"><h3>Ganancia Neta</h3><span class="pill neutral">Mes completo</span></div>
         <div class="big">${money(n.neto)}</div>
@@ -975,6 +989,7 @@ details[open] summary { margin-bottom: 4px; }
   $("#list-ingresos").addEventListener("click", (e) => {
     const a = e.target.closest("[data-anotar-dia]");
     if (a) { openSheet("ingresos", null, { fecha: a.dataset.anotarDia }); return; }
+    if (e.target.closest("[data-ver-gan]")) { verTodoGan = !verTodoGan; renderGanancias(); return; }
     const b = e.target.closest("[data-semana]"); if (!b) return;
     const v = Number(b.dataset.semana);
     semanaVista = v === 0 ? 0 : Math.min(0, semanaVista + v);
@@ -1439,6 +1454,7 @@ details[open] summary { margin-bottom: 4px; }
       if (save(() => { store.mantConf = { kmPorMes: km, colchon: col }; }, `Separá ${money(planMant().total)} por mes`)) closeSheet();
     });
   }
+  let verRepuestos = false, verServiceTodo = false;
   function renderAuto() {
     const box = $("#auto");
     const sum = (l) => l.reduce((t, g) => t + g.monto, 0);
@@ -1456,13 +1472,14 @@ details[open] summary { margin-bottom: 4px; }
       <div class="card plata">
         <div class="tiny muted" style="letter-spacing:.1em;text-transform:uppercase">Gastos del auto</div>
         <div class="big">${money(sum(gs))}</div>
-        <div class="rows">${AUTO_CATS.map((c) => {
+        <div class="rows">${AUTO_CATS.slice().sort((a, b) => sum(deCat(b, gs)) - sum(deCat(a, gs))).map((c) => {
           const l = deCat(c, gs), v = sum(l);
           const meta = !l.length ? "Nada anotado"
             : c === "GNC" ? `${l.length} ${l.length === 1 ? "carga" : "cargas"} · promedio ${money(v / l.length)}`
             : c === "Peajes" ? `${l.length} ${l.length === 1 ? "pasada" : "pasadas"}`
             : `${l.length} ${l.length === 1 ? "gasto" : "gastos"}`;
-          return `<div class="row no-check"><span><span class="name">${esc(c.replace(" del auto", ""))}</span><br><span class="meta">${meta}</span></span><span class="amt">${money(v)}</span>
+          const ir = c === "Mantenimiento del auto";
+          return `<div class="row no-check">${ir ? `<button class="row-btn" type="button" data-ir-service>` : ""}<span><span class="name">${esc(c.replace(" del auto", ""))}${ir ? " ›" : ""}</span><br><span class="meta">${meta}${ir && l.length ? " · ver cuáles" : ""}</span></span><span class="amt">${money(v)}</span>${ir ? "</button>" : ""}
             <div class="bar accent wide" aria-hidden="true"><i style="width:${Math.round(v / max * 100)}%"></i></div></div>`;
         }).join("")}</div>
       </div>`;
@@ -1488,10 +1505,11 @@ details[open] summary { margin-bottom: 4px; }
         <div class="actions"><button class="btn btn-sm" type="button" data-plan-conf>Km por mes e imprevistos</button>
           <button class="btn btn-sm" type="button" data-add="mant">+ Repuesto</button></div>
       </div>
-      <div class="rows">${pm.items.map(({ x, mes }) => `
+      <button class="btn ver-mas" type="button" data-ver-repuestos>${verRepuestos ? "Ocultar repuestos" : `Ver los ${pm.items.length} repuestos y cuánto separar de cada uno`}</button>
+      ${!verRepuestos ? "" : `<div class="rows">${pm.items.map(({ x, mes }) => `
         <div class="row no-check"><button class="row-btn" type="button" data-edit="mant" data-id="${esc(x.id)}">
           <span><span class="name">${esc(x.nombre)}</span><br><span class="meta">${x.cadaKm ? `Cada ${fmtN(x.cadaKm)} km` : x.cadaMeses ? `Cada ${fmtN(x.cadaMeses)} meses` : "Sin frecuencia"} · ${money(x.costo)}${x.precio !== "confirmado" ? " · estimado" : ""}</span></span>
-          <span class="amt">${money(mes)}<span class="tiny muted">/mes</span></span></button></div>`).join("")}</div>
+          <span class="amt">${money(mes)}<span class="tiny muted">/mes</span></span></button></div>`).join("")}</div>`}
     </div>`;
     const meses = [0, 1, 2, 3, 4, 5].map((k) => shiftMonth(mk(today()), -k));
     html += `<div class="panel" style="gap:8px"><h3 class="group-title">Últimos meses</h3><div class="rows">${meses.map((m) => {
@@ -1500,21 +1518,25 @@ details[open] summary { margin-bottom: 4px; }
         .map(([c, n]) => { const v = sum(deCat(c, l)); return v ? `${n} ${money(v)}` : ""; }).filter(Boolean).join(" · ");
       return `<div class="row no-check"><span><span class="name">${esc(cap(mesLabel(m)))}</span><br><span class="meta">${parts || "Nada anotado"}</span></span><span class="amt">${money(sum(l))}</span></div>`;
     }).join("")}</div></div>`;
-    const mant = store.gastos.filter((g) => !g.previo && g.cat === "Mantenimiento del auto").sort((a, b) => b.fecha.localeCompare(a.fecha));
-    html += `<div class="panel" style="gap:8px">
-      <h3 class="group-title">Service y repuestos</h3>
+    const mant = store.gastos.filter((g) => !g.previo && g.cat === "Mantenimiento del auto" && (verServiceTodo || mk(g.fecha) === curMonth)).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    html += `<div class="panel" style="gap:8px" id="auto-service">
+      <h3 class="group-title">Service y repuestos${verServiceTodo ? "" : ` de ${esc(mesLabel(curMonth).split(" ")[0])}`}</h3>
       <div class="actions"><button class="btn btn-sm" type="button" data-add="gastos" data-cat="Mantenimiento del auto">+ Service o repuesto</button>
         <button class="btn btn-sm" type="button" data-add="gastos" data-cat="GNC" data-medio="${esc(medioPorRegla("gnc") || store.medioDefault)}">+ Carga de GNC</button></div>
       ${mant.length ? `<div class="rows">${mant.slice(0, 15).map((g) => `
         <div class="row no-check"><button class="row-btn" type="button" data-edit="gastos" data-id="${esc(g.id)}">
           <span><span class="name">${esc(g.desc)}</span><br><span class="meta">${fmtDL(g.fecha)} · ${esc(MEDIOS[g.medio] || "")}</span></span>
-          <span class="amt">${money(g.monto)}</span></button></div>`).join("")}</div>` : `<div class="empty">Todavía no hay services ni repuestos anotados.</div>`}
+          <span class="amt">${money(g.monto)}</span></button></div>`).join("")}</div>` : `<div class="empty">${verServiceTodo ? "Todavía no hay services ni repuestos anotados." : `No anotaste services ni repuestos en ${esc(mesLabel(curMonth))}.`}</div>`}
+      <button class="linkbtn" type="button" data-ver-service>${verServiceTodo ? "Ver solo los de este mes" : "Ver los de meses anteriores"}</button>
       <div class="small muted">Para saber cuándo toca cada cambio por kilómetros, usá la <a href="https://agustincancilla.github.io/libreta-voyage/" target="_blank" rel="noopener">Libreta del Voyage</a>.</div>
     </div>`;
     box.innerHTML = html;
   }
   $("#auto").addEventListener("click", (e) => {
     if (e.target.closest("[data-plan-conf]")) { openPlanConf(); return; }
+    if (e.target.closest("[data-ver-repuestos]")) { verRepuestos = !verRepuestos; renderAuto(); return; }
+    if (e.target.closest("[data-ver-service]")) { verServiceTodo = !verServiceTodo; renderAuto(); return; }
+    if (e.target.closest("[data-ir-service]")) { verServiceTodo = false; renderAuto(); const t = $("#auto-service"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
     const b = e.target.closest("[data-auto-mes]"); if (!b) return;
     curMonth = shiftMonth(curMonth, Number(b.dataset.autoMes)); renderMes(); renderAuto();
   });
