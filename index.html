@@ -250,6 +250,8 @@ body.con-hoja { overflow: hidden; }
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 30; max-width: calc(100% - 32px);
 }
+/* Con una hoja abierta, el aviso sube para no tapar Guardar/Cancelar */
+body.con-hoja .toast { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 .banner { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 12px 14px; font-weight: 500; display: grid; gap: 8px; justify-items: start; }
 .banner.info { background: var(--sunken); color: var(--ink); border: 1px solid var(--line); }
 @media (max-width: 420px) { .summary { gap: 6px; } .sum { padding: 9px 10px; } .sum b { font-size: 20px; } .brand h1 { font-size: 26px; } .fields-2 { grid-template-columns: 1fr; } .qitem .fields-2 { grid-template-columns: 1fr 1fr; } .tabs .wrap { gap: 0; } .tab { padding-inline: 6px; font-size: 15px; } }
@@ -407,7 +409,7 @@ body.con-hoja { overflow: hidden; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v28"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v29"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
