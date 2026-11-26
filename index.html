@@ -66,7 +66,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--head); }
 .wrap { max-width: 760px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 button, input, select, textarea { font: inherit; color: inherit; }
-button { cursor: pointer; }
+button { cursor: pointer; touch-action: manipulation; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 a { color: var(--accent); }
 .num { font-variant-numeric: tabular-nums; }
@@ -93,11 +93,12 @@ a { color: var(--accent); }
 .tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 .tabs .wrap { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tabs .wrap::-webkit-scrollbar { display: none; }
-.tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 8px 9px; white-space: nowrap; font-weight: 600; color: var(--muted); }
+.tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 8px 9px; min-height: 44px; white-space: nowrap; font-weight: 600; color: var(--muted); }
 .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .subtabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-inline: max(16px, env(safe-area-inset-left, 0px)); }
 .subtabs::-webkit-scrollbar { display: none; }
-.subtab { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 7px 14px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.subtab { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 7px 14px; min-height: 40px; font-weight: 600; font-size: 14px; white-space: nowrap; position: relative; }
+.subtab::after { content: ""; position: absolute; inset: -3px -2px; }
 .subtab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .ver-mas { width: 100%; margin-top: 10px; }
 #auto-service { scroll-margin-top: 64px; }
@@ -109,13 +110,16 @@ main .wrap { padding-block: 18px 64px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .panel-head h2 { margin: 0; font-family: var(--f-display); font-size: 24px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; text-wrap: balance; }
 .panel-head .actions { gap: 6px; }
-.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 12px; font-weight: 600; font-size: 14px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 12px; min-height: 44px; font-weight: 600; font-size: 14px; }
 .btn:hover { border-color: var(--accent); }
 .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn-danger { color: var(--bad); }
 .btn-danger.armed { background: var(--bad); color: #fff; border-color: var(--bad); }
-.btn-sm { padding: 5px 10px; font-size: 13px; }
-.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: 14px; }
+/* Botón chico: se ve compacto pero la zona para tocar llega a ~44px */
+.btn-sm { padding: 5px 10px; font-size: 13px; min-height: 34px; position: relative; }
+.btn-sm::after { content: ""; position: absolute; inset: -5px -3px; }
+.linkbtn { background: none; border: 0; padding: 12px 8px; margin: -12px -8px; color: var(--accent); font-weight: 600; font-size: 14px; }
+.linkbtn.armed { color: var(--bad); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 .group-title { margin: 4px 0 -6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -132,7 +136,7 @@ main .wrap { padding-block: 18px 64px; }
 /* Mes */
 .month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .month-nav h2 { margin: 0; font-family: var(--f-display); font-size: 26px; text-transform: uppercase; letter-spacing: .02em; }
-.month-nav button { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 20px; font-weight: 700; line-height: 1; }
+.month-nav button { width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 20px; font-weight: 700; line-height: 1; }
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .sum { border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
 .sum b { font-family: var(--f-display); font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -206,9 +210,10 @@ details[open] summary { margin-bottom: 4px; }
 .dual s { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); text-decoration: none; }
 
 /* Hojas */
-.sheet-back { position: fixed; inset: 0; background: var(--scrim); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet-back { position: fixed; inset: 0; background: var(--scrim); z-index: 20; display: flex; align-items: flex-end; justify-content: center; overscroll-behavior: contain; }
+body.con-hoja { overflow: hidden; }
 .sheet {
-  background: var(--surface); width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto;
+  background: var(--surface); width: 100%; max-width: 560px; max-height: 92%; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain;
   border-radius: 14px 14px 0 0; display: grid; gap: 14px;
   padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
@@ -226,6 +231,8 @@ details[open] summary { margin-bottom: 4px; }
 .field .hint { font-size: 12px; color: var(--muted); }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .sheet-actions { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+/* Guardar/Cancelar quedan siempre a la vista, aunque el teclado achique la hoja */
+.sheet > .sheet-actions:last-child { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom, 0px)); background: var(--surface); padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); margin-bottom: calc(-18px - env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
 .sheet-actions div { display: flex; gap: 8px; }
 .fields-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .qitem { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); }
@@ -400,7 +407,7 @@ details[open] summary { margin-bottom: 4px; }
 <script>
 (() => {
   const STORE_KEY = "mis-finanzas-v1";
-  const APP_VERSION = "v27"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
+  const APP_VERSION = "v28"; // igual que VERSION en sw.js: se muestra en "Datos y copias"
   const BACKUP_KEY = "mis-finanzas-ultima-copia";
   const BACKUP_DIAS = 30;
   const SEMANAS_POR_MES = 4.33;
@@ -1321,6 +1328,7 @@ details[open] summary { margin-bottom: 4px; }
     ci.addEventListener("change", () => { if (ci.value) vi.value = addBiz(ci.value, 7); });
     form.addEventListener("click", (e) => {
       const d = e.target.closest("[data-del-cierre]"); if (!d) return;
+      if (!d.classList.contains("armed")) { d.classList.add("armed"); d.textContent = "¿Seguro? Tocá de nuevo"; return; }
       if (save(() => { t.cierres = t.cierres.filter((k) => k.cierre !== d.dataset.delCierre); }, "Fecha borrada")) { closeSheet(); openFechas(tid); }
     });
     form.addEventListener("submit", (e) => {
@@ -1984,13 +1992,29 @@ details[open] summary { margin-bottom: 4px; }
   };
   const DEFAULTS = { mant: () => ({ precio: "confirmado" }), reglas: () => ({ medio: "visa" }), ingresos: () => ({ fecha: today() }), gastos: () => ({ fecha: today(), medio: store.medioDefault, cuotas: 1, cat: "Otros" }), fijos: () => ({ tipo: "pago", medio: "efectivo", cat: "Casa" }), compras: () => ({ lugar: "Carnicería", frecuencia: "mensual", unidad: "kg" }), inversiones: () => ({ tipo: "Sin clasificar", moneda: "USD" }), deudas: () => ({ tipo: "debo" }), ahorros: () => ({ autoDia: "1" }) };
 
-  function closeSheet() { $("#sheet-root").innerHTML = ""; }
+  function closeSheet() { $("#sheet-root").innerHTML = ""; document.body.classList.remove("con-hoja"); }
   function mountSheet(html) {
     $("#sheet-root").innerHTML = `<div class="sheet-back">${html}</div>`;
+    document.body.classList.add("con-hoja");
     const back = $(".sheet-back");
+    // Tocar afuera cierra la hoja solo si no escribiste nada: si hay cambios, hay que usar Cancelar (v28)
+    let cambios = false;
+    back.addEventListener("input", () => { cambios = true; });
+    back.addEventListener("change", () => { cambios = true; });
+    back.addEventListener("click", (e) => {
+      if (e.target === back && cambios) { e.stopImmediatePropagation(); toast("Tenés cambios sin guardar: tocá Cancelar para salir"); }
+    }, true);
     back.addEventListener("click", (e) => { if (e.target === back || e.target.closest("[data-cancel]")) closeSheet(); });
     back.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
-    back.addEventListener("input", (e) => { if (e.target.hasAttribute("data-num")) { const n = parseInt0(e.target.value); e.target.value = n == null ? "" : fmtN(n); } });
+    back.addEventListener("input", (e) => {
+      const el = e.target; if (!el.hasAttribute("data-num")) return;
+      // Reformatea con puntos de miles sin mandar el cursor al final: queda después del mismo dígito
+      const pos = el.selectionStart ?? el.value.length;
+      const antes = el.value.slice(0, pos).replace(/\D/g, "").length;
+      const n = parseInt0(el.value); el.value = n == null ? "" : fmtN(n);
+      let i = 0, vistos = 0; while (i < el.value.length && vistos < antes) { if (/\d/.test(el.value[i])) vistos++; i++; }
+      try { el.setSelectionRange(i, i); } catch (_) {}
+    });
     return back.firstElementChild;
   }
   function openSimple({ title, label, value, onSave }) {
